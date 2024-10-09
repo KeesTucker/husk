@@ -1,18 +1,21 @@
 package canbus
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const CanIDTransmit = 0x7E0
 
 // Frame represents a CAN bus data frame with an 11-bit identifier
 type Frame struct {
-	ID   uint16      // CAN identifier
-	DLC  uint16      // Data Length Code (0-4095)
-	Data [4095]uint8 // Data payload
+	ID   uint16   // CAN identifier
+	DLC  uint8    // Data Length Code (0-8)
+	Data [8]uint8 // Data payload
 }
 
 // NewFrame creates a new CAN Frame
-func NewFrame(id uint16, dlc uint16, data [4095]uint8) Frame {
+func NewFrame(id uint16, dlc uint8, data [8]uint8) Frame {
 	return Frame{
 		ID:   id,
 		DLC:  dlc,
@@ -22,9 +25,10 @@ func NewFrame(id uint16, dlc uint16, data [4095]uint8) Frame {
 
 // String method to provide a human-readable representation of the CAN Frame
 func (f Frame) String() string {
-	// Ensure DLC is valid before accessing the data slice
-	if f.DLC > 4095 {
-		f.DLC = 4095
+	formattedData := make([]string, f.DLC)
+	for i := 0; i < int(f.DLC); i++ {
+		formattedData[i] = fmt.Sprintf("0x%02X", f.Data[i])
 	}
-	return fmt.Sprintf("ID: 0x%X, DLC: %d, Data: % X", f.ID, f.DLC, f.Data[:f.DLC])
+	dataString := strings.Join(formattedData, " ")
+	return fmt.Sprintf("ID: 0x%X, DLC: %d, Data: %s", f.ID, f.DLC, dataString)
 }

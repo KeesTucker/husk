@@ -38,15 +38,21 @@ func sendManualCanBusFrame(d drivers.Driver, message string) {
 		return
 	}
 
+	dlc := uint8(len(data))
+	if dlc > 8 {
+		log.Printf("error can't send more that 8 bytes")
+		return
+	}
+
 	// Construct the CAN frame
 	frame := canbus.Frame{
 		ID:  canbus.CanIDTransmit,
-		DLC: uint16(len(data)),
+		DLC: dlc,
 	}
 	copy(frame.Data[:], data)
 
 	// Send the CAN frame
-	if err := d.SendCanBusFrame(frame); err != nil {
+	if err = d.SendCanBusFrame(frame); err != nil {
 		log.Printf("error sending CAN bus frame: %v", err)
 	}
 }

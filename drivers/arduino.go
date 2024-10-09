@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"bufio"
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
@@ -12,33 +13,32 @@ import (
 )
 
 const (
-	BaudRate         = 115200
-	SerialBufferSize = 4100
+	BaudRate = 115200
 )
 
 type ArduinoDriver struct {
 	port   serial.Port
-	buffer []byte
+	reader *bufio.Reader
 }
 
 func NewArduinoDriver() (d Driver, err error) {
 	arduinoDriver := new(ArduinoDriver)
 
-	// find Arduino port
+	// Find Arduino port
 	portName, err := findArduinoPortName()
 	if err != nil {
-		return nil, err // Return nil and the error, ensuring invalid driver isn't returned
+		return nil, err
 	}
 
-	// open serial port
+	// Open serial port
 	mode := &serial.Mode{BaudRate: BaudRate}
 	arduinoDriver.port, err = serial.Open(portName, mode)
 	if err != nil {
 		return nil, err
 	}
 
-	// allocate serial buffer
-	arduinoDriver.buffer = make([]byte, SerialBufferSize)
+	// Create reader
+	arduinoDriver.reader = bufio.NewReader(arduinoDriver.port)
 
 	return arduinoDriver, nil
 }
@@ -49,7 +49,7 @@ func findArduinoPortName() (string, error) {
 		return "", err
 	}
 
-	// Loop through all ports and find the first match with the given VID
+	// Find the first matching USB port
 	for _, port := range ports {
 		if port.IsUSB {
 			if port.VID == "2341" || port.VID == "1A86" || port.VID == "2A03" {
@@ -76,16 +76,16 @@ func (d *ArduinoDriver) SendCanBusFrame(frame canbus.Frame) error {
 	}
 
 	// Convert the CAN ID to a string
-	canID := fmt.Sprintf("%03X", frame.ID) // Format as a 3-character hexadecimal string
+	canID := fmt.Sprintf("%03X", frame.ID)
 
 	// Convert the Data to a hex string, only using the number of bytes specified by DLC
 	dataHex := ""
 	for i := 0; i < int(frame.DLC); i++ {
-		dataHex += fmt.Sprintf("%02X", frame.Data[i]) // Each byte as two hexadecimal characters
+		dataHex += fmt.Sprintf("%02X", frame.Data[i])
 	}
 
 	// Create the final string in the format "CANID DATAHEX"
-	frameString := canID + " " + dataHex
+	frameString := fmt.Sprintf("%s:%s\n", canID, dataHex)
 
 	// Send the frame string over the serial port
 	_, err := d.port.Write([]byte(frameString))
@@ -101,26 +101,17 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 		return nil, fmt.Errorf("error: Arduino port is not available")
 	}
 
-	n, err := d.port.Read(d.buffer)
+	// Read the entire message until '\n'
+	input, err := d.reader.ReadString('\n')
 	if err != nil {
 		return nil, err
 	}
-	if n == 0 {
-		return nil, nil
-	}
 
-	input := string(d.buffer[:n])
-	// Don't read if message is not complete
-	if !strings.Contains(input, "\n") {
-		return nil, nil
-	}
-
-	// Clean all newline etc
-	cleaned := strings.ReplaceAll(input, "\n", "")
-	cleaned = strings.ReplaceAll(cleaned, "\r", "")
+	// Clean newline characters and trim the input
+	cleaned := strings.TrimSpace(input)
 
 	// Split into two parts (CAN ID and data)
-	parts := strings.SplitN(cleaned, " ", 2)
+	parts := strings.SplitN(cleaned, ":", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("error: incorrect serial dataframe format")
 	}
@@ -141,7 +132,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 	// Create a new canbus.Frame object and populate it
 	frame := &canbus.Frame{
 		ID:  uint16(id),
-		DLC: uint16(len(data)),
+		DLC: uint8(len(data)),
 	}
 
 	// Copy the parsed data into the frame's Data array
