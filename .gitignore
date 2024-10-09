@@ -1,13 +1,4 @@
-﻿# Default ignored files
-/shelf/
-/workspace.xml
-# Editor-based HTTP Client requests
-/httpRequests/
-# Datasource local storage ignored files
-/dataSources/
-/dataSources.local.xml
-
-# Binaries for programs and plugins
+﻿# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
@@ -29,3 +20,5 @@ go.work.sum
 
 # env file
 .env
+
+.idea/
