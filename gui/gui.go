@@ -40,7 +40,7 @@ func (g *GUI) RunApp() {
 
 	// Turn off auto scroll when user scrolls up.
 	g.rawCanBusFrameViewer.OnScrolled = func(offset fyne.Position) {
-		if offset.Y+g.rawCanBusFrameViewer.Size().Height >= g.rawCanBusFrameViewer.Content.Size().Height*0.9 {
+		if offset.Y+g.rawCanBusFrameViewer.Size().Height >= g.rawCanBusFrameViewer.Content.Size().Height - 20 { //todo: make auto scroll offset const and tune for feel
 			g.autoScroll = true // User is near the bottom
 		} else {
 			g.autoScroll = false // User scrolled up
