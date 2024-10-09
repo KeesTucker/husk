@@ -7,5 +7,5 @@ import (
 type Driver interface {
 	Cleanup()
 	SendCanBusFrame(frame canbus.Frame) error
-	ReadCanBusFrame() (frame *canbus.Frame, err error) // Use pointer for clearer error handling
+	ReadCanBusFrame() (frame *canbus.Frame, err error)
 }
