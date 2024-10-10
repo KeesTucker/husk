@@ -39,7 +39,7 @@ func NewArduinoDriver() (*ArduinoDriver, error) {
 		pauseChan:  make(chan struct{}, 1),
 		resumeChan: make(chan struct{}, 1),
 		framesChan: make(chan canbus.Frame, 100), // Buffered channel to hold incoming frames
-		errorChan:  make(chan error, 1),
+		errorChan:  make(chan error, 10),
 	}
 
 	// Find Arduino port
@@ -92,12 +92,13 @@ func (d *ArduinoDriver) Cleanup() error {
 	// Cancel the context to stop the read loop
 	d.cancel()
 
-	// Wait for the read loop to finish
-	d.readDone.Wait()
-
 	if d.port != nil {
 		return d.port.Close()
 	}
+
+	// Wait for the read loop to finish
+	d.readDone.Wait()
+
 	return nil
 }
 
@@ -141,7 +142,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 	case err := <-d.errorChan:
 		return nil, err
 	case <-d.ctx.Done():
-		return nil, fmt.Errorf("driver has been closed")
+		return nil, errDriverClosed
 	}
 }
 
@@ -174,21 +175,21 @@ func (d *ArduinoDriver) readLoop() {
 	for {
 		select {
 		case <-d.ctx.Done():
-			fmt.Println("Read loop exiting due to context cancellation")
+			fmt.Println("read loop exiting due to context cancellation")
 			return
 		case <-d.pauseChan:
-			fmt.Println("Read loop paused for writing")
+			fmt.Println("read loop paused for writing")
 			// Wait until resume signal is received
 			select {
 			case <-d.resumeChan:
-				fmt.Println("Read loop resumed after writing")
+				fmt.Println("read loop resumed after writing")
 			case <-d.ctx.Done():
-				fmt.Println("Read loop exiting while paused due to context cancellation")
+				fmt.Println("read loop exiting while paused due to context cancellation")
 				return
 			}
 		default:
 			// Attempt to read a frame
-			frame, err := d.ReadCanBusFrameInternal()
+			frame, err := d.readCanBusFrameInternal()
 			if err != nil {
 				// Send error to error channel and exit read loop
 				select {
@@ -209,8 +210,8 @@ func (d *ArduinoDriver) readLoop() {
 	}
 }
 
-// ReadCanBusFrameInternal reads and unpacks a single CAN bus frame from the serial port.
-func (d *ArduinoDriver) ReadCanBusFrameInternal() (*canbus.Frame, error) {
+// readCanBusFrameInternal reads and unpacks a single CAN bus frame from the serial port.
+func (d *ArduinoDriver) readCanBusFrameInternal() (*canbus.Frame, error) {
 	// Read and unstuff the frame
 	unstuffed, err := d.readAndUnstuffFrame()
 	if err != nil {
@@ -238,21 +239,21 @@ func (d *ArduinoDriver) ReadCanBusFrameInternal() (*canbus.Frame, error) {
 	var dataBuffer [8]uint8
 	copy(dataBuffer[:], unstuffed[3:3+dlc])
 
-	// Checksum
-	receivedChecksum := unstuffed[3+dlc]
-	calculatedChecksum := calculateCRC8(dlc, dataBuffer)
-
-	// Verify checksum
-	if calculatedChecksum != receivedChecksum {
-		return nil, fmt.Errorf("error: checksum mismatch")
-	}
-
 	// Create a new canbus.Frame object and populate it
 	frame := &canbus.Frame{
 		ID:  id,
 		DLC: dlc,
 	}
 	copy(frame.Data[:], dataBuffer[:])
+
+	// Checksum
+	receivedChecksum := unstuffed[3+dlc]
+	calculatedChecksum := calculateCRC8(frame)
+
+	// Verify checksum
+	if calculatedChecksum != receivedChecksum {
+		return nil, fmt.Errorf("error: checksum mismatch")
+	}
 
 	return frame, nil
 }
@@ -341,7 +342,7 @@ func (d *ArduinoDriver) createFrameBytes(frame canbus.Frame) []byte {
 	}
 
 	// Calculate and add checksum
-	checksum := calculateCRC8(frame.DLC, frame.Data)
+	checksum := calculateCRC8(&frame)
 	stuffByte(checksum)
 
 	// End Marker
@@ -351,12 +352,36 @@ func (d *ArduinoDriver) createFrameBytes(frame canbus.Frame) []byte {
 }
 
 // calculateCRC8 computes the CRC-8 checksum for the given data.
-func calculateCRC8(dlc uint8, dataBuffer [8]uint8) byte {
+func calculateCRC8(frame *canbus.Frame) byte {
 	crc := byte(0x00)
 	const polynomial = byte(0x07) // CRC-8-CCITT
 
-	for i := 0; i < int(dlc); i++ {
-		b := dataBuffer[i]
+	// Include ID (2 bytes)
+	idBytes := []byte{byte(frame.ID >> 8), byte(frame.ID & 0xFF)}
+	for _, b := range idBytes {
+		crc ^= b
+		for i := 0; i < 8; i++ {
+			if crc&0x80 != 0 {
+				crc = (crc << 1) ^ polynomial
+			} else {
+				crc <<= 1
+			}
+		}
+	}
+
+	// Include DLC
+	crc ^= frame.DLC
+	for i := 0; i < 8; i++ {
+		if crc&0x80 != 0 {
+			crc = (crc << 1) ^ polynomial
+		} else {
+			crc <<= 1
+		}
+	}
+
+	// Include Data bytes
+	for i := 0; i < int(frame.DLC); i++ {
+		b := frame.Data[i]
 		crc ^= b
 		for j := 0; j < 8; j++ {
 			if crc&0x80 != 0 {

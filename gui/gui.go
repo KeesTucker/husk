@@ -90,8 +90,20 @@ func (g *GUI) OnCanBusFrameReceive(frame *canbus.Frame) {
 	}
 
 	// Append the new frame to the output label
-	newText := fmt.Sprintf("%s%s\n", g.rawCanBusFrameOutput.Text, frame.String())
+	g.writeToLog(fmt.Sprintf("%s%s\n", g.rawCanBusFrameOutput.Text, frame.String()))
+}
 
+// DisplayError is called when an error is received.
+func (g *GUI) DisplayError(err error) {
+	if !g.isRunning {
+		return
+	}
+
+	// Append the new frame to the output label
+	g.writeToLog(fmt.Sprintf("%s%s\n", g.rawCanBusFrameOutput.Text, err))
+}
+
+func (g *GUI) writeToLog(newText string) {
 	// Update the label text
 	g.rawCanBusFrameOutput.SetText(newText)
 

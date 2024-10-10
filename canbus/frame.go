@@ -7,14 +7,14 @@ import (
 
 const CanIDTransmit = 0x7E0
 
-// Frame represents a CAN bus data frame with an 11-bit identifier
+// Frame represents a CAN bus data frame with an 11-bit identifier.
 type Frame struct {
 	ID   uint16   // CAN identifier
 	DLC  uint8    // Data Length Code (0-8)
 	Data [8]uint8 // Data payload
 }
 
-// String method to provide a human-readable representation of the CAN Frame
+// String method to provide a human-readable representation of the CAN Frame.
 func (f Frame) String() string {
 	formattedData := make([]string, f.DLC)
 	for i := 0; i < int(f.DLC); i++ {
