@@ -1,13 +1,11 @@
 package drivers
 
 import (
-	"bufio"
-	"context"
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"husk/canbus"
-	"log"
+	"io"
 	"sync"
 	"time"
 )
@@ -17,30 +15,23 @@ const (
 	StartMarker = 0x7E
 	EndMarker   = 0x7F
 	EscapeChar  = 0x1B
+	ACK         = 0x06
+	NACK        = 0x15
+	MaxRetries  = 3
+	ReadTimeout = 1 * time.Millisecond
+	ACKTimeout  = 100 * time.Millisecond
+	RetryDelay  = 100 * time.Millisecond
 )
 
 // ArduinoDriver handles serial communication with an Arduino device.
 type ArduinoDriver struct {
-	port       serial.Port
-	reader     *bufio.Reader
-	ctx        context.Context
-	cancel     context.CancelFunc
-	writeMutex sync.Mutex
-	pauseChan  chan struct{}
-	resumeChan chan struct{}
-	framesChan chan canbus.Frame
-	errorChan  chan error
-	readDone   sync.WaitGroup
+	port        serial.Port
+	serialMutex sync.Mutex
 }
 
 // NewArduinoDriver initializes and returns a new ArduinoDriver.
 func NewArduinoDriver() (*ArduinoDriver, error) {
-	arduinoDriver := &ArduinoDriver{
-		pauseChan:  make(chan struct{}, 1),
-		resumeChan: make(chan struct{}, 1),
-		framesChan: make(chan canbus.Frame, 100), // Buffered channel to hold incoming frames
-		errorChan:  make(chan error, 10),
-	}
+	arduinoDriver := &ArduinoDriver{}
 
 	// Find Arduino port
 	portName, err := findArduinoPortName()
@@ -54,16 +45,11 @@ func NewArduinoDriver() (*ArduinoDriver, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Create reader
-	arduinoDriver.reader = bufio.NewReader(arduinoDriver.port)
-
-	// Initialize context
-	arduinoDriver.ctx, arduinoDriver.cancel = context.WithCancel(context.Background())
-
-	// Start the read loop
-	arduinoDriver.readDone.Add(1)
-	go arduinoDriver.readLoop()
+	// Set read timeout
+	err = arduinoDriver.port.SetReadTimeout(ReadTimeout)
+	if err != nil {
+		return nil, err
+	}
 
 	return arduinoDriver, nil
 }
@@ -84,143 +70,107 @@ func findArduinoPortName() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("error: no Arduino found on the USB ports")
+	return "", fmt.Errorf("error no Arduino found on the USB ports")
 }
 
 // Cleanup closes the serial port and stops the read loop.
 func (d *ArduinoDriver) Cleanup() error {
-	// Cancel the context to stop the read loop
-	d.cancel()
-
 	if d.port != nil {
 		return d.port.Close()
 	}
-
-	// Wait for the read loop to finish
-	d.readDone.Wait()
 
 	return nil
 }
 
 // SendCanBusFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
 func (d *ArduinoDriver) SendCanBusFrame(frame canbus.Frame) error {
-	d.writeMutex.Lock()
-	defer d.writeMutex.Unlock()
+	d.serialMutex.Lock()
+	defer d.serialMutex.Unlock()
 
-	// Pause the read loop
-	if err := d.pauseReading(); err != nil {
-		return err
-	}
-
-	// Create frame bytes
 	frameBytes := d.createFrameBytes(frame)
 
-	// Write to serial port
-	_, err := d.port.Write(frameBytes)
-	if err != nil {
-		// Resume reading even if write fails
-		err := d.resumeReading()
+	ackReceived := false
+
+	for retries := 0; retries < MaxRetries && !ackReceived; retries++ {
+		// Write to serial port
+		_, err := d.port.Write(frameBytes)
 		if err != nil {
-			log.Printf("error resuming read on write error: %v", err)
+			return err
 		}
-		return err
+
+		// Wait for ACK or NACK
+		ackReceived, err = d.waitForAck()
+		if err != nil {
+			return err
+		}
+
+		if !ackReceived {
+			// Retry after a delay
+			time.Sleep(RetryDelay)
+		}
 	}
 
-	// Resume the read loop
-	if err := d.resumeReading(); err != nil {
-		return err
+	if !ackReceived {
+		return fmt.Errorf("error failed to receive ACK after %d retries", MaxRetries)
 	}
 
 	return nil
+}
+
+func (d *ArduinoDriver) waitForAck() (bool, error) {
+	timeout := time.After(ACKTimeout)
+	ackBuffer := make([]byte, 1)
+
+	for {
+		select {
+		case <-timeout:
+			return false, nil
+		default:
+			n, err := d.port.Read(ackBuffer)
+			if err != nil {
+				if err == io.EOF {
+					continue
+				}
+				return false, err
+			}
+
+			if n > 0 {
+				if ackBuffer[0] == ACK {
+					return true, nil
+				} else if ackBuffer[0] == NACK {
+					return false, nil
+				}
+			}
+		}
+	}
 }
 
 // ReadCanBusFrame retrieves a received CAN bus frame from the frames channel.
 func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
-	select {
-	case frame := <-d.framesChan:
-		return &frame, nil
-	case err := <-d.errorChan:
-		return nil, err
-	case <-d.ctx.Done():
-		return nil, errDriverClosed
-	}
-}
+	d.serialMutex.Lock()
+	defer d.serialMutex.Unlock()
 
-// pauseReading signals the read loop to pause.
-func (d *ArduinoDriver) pauseReading() error {
-	select {
-	case d.pauseChan <- struct{}{}:
-		// Signal sent successfully
-	case <-time.After(1 * time.Second):
-		return fmt.Errorf("timeout while pausing reading")
-	}
-	return nil
-}
-
-// resumeReading signals the read loop to resume.
-func (d *ArduinoDriver) resumeReading() error {
-	select {
-	case d.resumeChan <- struct{}{}:
-		// Signal sent successfully
-	case <-time.After(1 * time.Second):
-		return fmt.Errorf("timeout while resuming reading")
-	}
-	return nil
-}
-
-// readLoop continuously reads from the serial port, handling pause and resume signals.
-func (d *ArduinoDriver) readLoop() {
-	defer d.readDone.Done()
-
-	for {
-		select {
-		case <-d.ctx.Done():
-			fmt.Println("read loop exiting due to context cancellation")
-			return
-		case <-d.pauseChan:
-			fmt.Println("read loop paused for writing")
-			// Wait until resume signal is received
-			select {
-			case <-d.resumeChan:
-				fmt.Println("read loop resumed after writing")
-			case <-d.ctx.Done():
-				fmt.Println("read loop exiting while paused due to context cancellation")
-				return
-			}
-		default:
-			// Attempt to read a frame
-			frame, err := d.readCanBusFrameInternal()
-			if err != nil {
-				// Send error to error channel and exit read loop
-				select {
-				case d.errorChan <- err:
-				default:
-					// If error channel is full, discard the error
-				}
-				return
-			}
-
-			// Send the frame to the frames channel
-			select {
-			case d.framesChan <- *frame:
-			case <-d.ctx.Done():
-				return
-			}
-		}
-	}
-}
-
-// readCanBusFrameInternal reads and unpacks a single CAN bus frame from the serial port.
-func (d *ArduinoDriver) readCanBusFrameInternal() (*canbus.Frame, error) {
 	// Read and unstuff the frame
 	unstuffed, err := d.readAndUnstuffFrame()
 	if err != nil {
+		_, err = d.port.Write([]byte{NACK})
+		if err != nil {
+			return nil, fmt.Errorf("error failed to send nack on read and unstuff error: %s", err)
+		}
 		return nil, err
+	}
+
+	if unstuffed == nil {
+		return nil, nil
 	}
 
 	// Parse unstuffed data
 	if len(unstuffed) < 4 {
-		return nil, fmt.Errorf("error: incomplete frame received")
+		_, err = d.port.Write([]byte{NACK})
+		if err != nil {
+			return nil, fmt.Errorf("error failed to send nack on incomplete frame: %s", err)
+		}
+		return nil, fmt.Errorf("error incomplete frame received")
 	}
 
 	// CAN ID (2 bytes)
@@ -229,12 +179,20 @@ func (d *ArduinoDriver) readCanBusFrameInternal() (*canbus.Frame, error) {
 	// DLC
 	dlc := unstuffed[2]
 	if dlc > 8 {
-		return nil, fmt.Errorf("error: invalid DLC value: %d", dlc)
+		_, err = d.port.Write([]byte{NACK})
+		if err != nil {
+			return nil, fmt.Errorf("error failed to send nack on invalid DLC: %s", err)
+		}
+		return nil, fmt.Errorf("error invalid DLC value: %d", dlc)
 	}
 
-	// Data (up to DLC bytes)
-	if len(unstuffed) < 3+int(dlc) {
-		return nil, fmt.Errorf("error: incomplete frame received, expected %d bytes but got %d", 3+int(dlc), len(unstuffed))
+	// Data
+	if len(unstuffed) < 3+int(dlc)+1 {
+		_, err = d.port.Write([]byte{NACK})
+		if err != nil {
+			return nil, fmt.Errorf("error failed to send nack on incomplete frame: %s", err)
+		}
+		return nil, fmt.Errorf("error incomplete frame received, expected %d bytes but got %d", 3+int(dlc), len(unstuffed))
 	}
 	var dataBuffer [8]uint8
 	copy(dataBuffer[:], unstuffed[3:3+dlc])
@@ -252,7 +210,17 @@ func (d *ArduinoDriver) readCanBusFrameInternal() (*canbus.Frame, error) {
 
 	// Verify checksum
 	if calculatedChecksum != receivedChecksum {
-		return nil, fmt.Errorf("error: checksum mismatch")
+		_, err = d.port.Write([]byte{NACK})
+		if err != nil {
+			return nil, fmt.Errorf("error failed to send nack on bad checksum: %s", err)
+		}
+		return nil, fmt.Errorf("error checksum mismatch")
+	}
+
+	// Send ACK
+	_, err = d.port.Write([]byte{ACK})
+	if err != nil {
+		return nil, fmt.Errorf("error failed to send ack: %s", err)
 	}
 
 	return frame, nil
@@ -260,16 +228,15 @@ func (d *ArduinoDriver) readCanBusFrameInternal() (*canbus.Frame, error) {
 
 // readAndUnstuffFrame reads bytes from the serial port and removes byte stuffing.
 func (d *ArduinoDriver) readAndUnstuffFrame() ([]byte, error) {
-	// Wait for the start marker
-	for {
-		b, err := d.reader.ReadByte()
-		if err != nil {
-			return nil, err
-		}
-		if b == StartMarker {
-			break
-		}
-		// Ignore bytes until start marker
+	byteBuffer := make([]byte, 1)
+
+	_, err := d.port.Read(byteBuffer)
+	if err != nil {
+		return nil, err
+	}
+	b := byteBuffer[0]
+	if b != StartMarker {
+		return nil, nil
 	}
 
 	// Buffer for storing unstuffed bytes
@@ -277,20 +244,23 @@ func (d *ArduinoDriver) readAndUnstuffFrame() ([]byte, error) {
 
 	// Read bytes until the end marker is found
 	for {
-		b, err := d.reader.ReadByte()
+		_, err = d.port.Read(byteBuffer)
 		if err != nil {
 			return nil, err
 		}
+		b = byteBuffer[0]
 
 		if b == EndMarker {
 			// End marker found, break loop
 			break
 		} else if b == EscapeChar {
 			// Handle escape sequences
-			tag, err := d.reader.ReadByte()
+			byteBuffer = make([]byte, 1)
+			_, err = d.port.Read(byteBuffer)
 			if err != nil {
 				return nil, err
 			}
+			tag := byteBuffer[0]
 			switch tag {
 			case 0x01:
 				unstuffed = append(unstuffed, StartMarker)
@@ -299,7 +269,7 @@ func (d *ArduinoDriver) readAndUnstuffFrame() ([]byte, error) {
 			case 0x03:
 				unstuffed = append(unstuffed, EscapeChar)
 			default:
-				return nil, fmt.Errorf("error: invalid escape sequence")
+				return nil, fmt.Errorf("error invalid escape sequence")
 			}
 		} else {
 			unstuffed = append(unstuffed, b)

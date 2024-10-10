@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"husk/canbus"
 	"husk/drivers"
 	"husk/gui"
 	"husk/utils"
 	"log"
-	"sync"
 )
 
 func main() {
@@ -20,12 +18,6 @@ func main() {
 	// Initialize the GUI
 	g := new(gui.GUI)
 
-	// Create a WaitGroup for frame reading
-	var wg sync.WaitGroup
-
-	// Create a context with cancel to handle stopping goroutines
-	ctx, cancel := context.WithCancel(context.Background())
-
 	// Set up callback to send frames from GUI to Arduino driver
 	g.SetSendManualCanBusFrameCallback(func(message string) {
 		// Convert the message to a byte array
@@ -37,7 +29,7 @@ func main() {
 
 		dlc := uint8(len(data))
 		if dlc > 8 {
-			log.Printf("error: can't send more than 8 bytes")
+			log.Printf("error can't send more than 8 bytes")
 			return
 		}
 
@@ -54,25 +46,25 @@ func main() {
 	})
 
 	// Start reading frames from Arduino and updating GUI in a separate goroutine
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		drivers.ReadFrames(ctx, d,
-			g.OnCanBusFrameReceive,
-			g.DisplayError,
-		)
+		for {
+			frame, err := d.ReadCanBusFrame()
+			if err != nil {
+				// Instead of logging, use the error callback
+				g.DisplayError(err)
+			}
+			if frame != nil {
+				// Call the provided frame callback with the received frame
+				g.OnCanBusFrameReceive(frame)
+			}
+		}
 	}()
 
 	// Run the GUI application (this will block, but frame reading runs in parallel)
 	g.RunApp()
 
-	// Close the Arduino driver properly
-	// Signal the reading goroutine to stop
-	cancel()
 	if err = d.Cleanup(); err != nil {
 		log.Printf("error during driver cleanup: %v", err)
 	}
 
-	// Ensure we wait for reading frames to finish before exit
-	wg.Wait()
 }
