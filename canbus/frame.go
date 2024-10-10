@@ -14,15 +14,6 @@ type Frame struct {
 	Data [8]uint8 // Data payload
 }
 
-// NewFrame creates a new CAN Frame
-func NewFrame(id uint16, dlc uint8, data [8]uint8) Frame {
-	return Frame{
-		ID:   id,
-		DLC:  dlc,
-		Data: data,
-	}
-}
-
 // String method to provide a human-readable representation of the CAN Frame
 func (f Frame) String() string {
 	formattedData := make([]string, f.DLC)

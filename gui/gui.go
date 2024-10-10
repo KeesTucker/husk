@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
@@ -14,9 +15,11 @@ const (
 )
 
 type GUI struct {
-	app fyne.App
+	app    fyne.App
+	window fyne.Window
 
 	// state
+	isRunning  bool
 	autoScroll bool
 
 	// UI elements
@@ -29,7 +32,7 @@ type GUI struct {
 
 func (g *GUI) RunApp() {
 	g.app = app.New()
-	w := g.app.NewWindow(windowName)
+	g.window = g.app.NewWindow(windowName)
 
 	g.rawCanBusFrameOutput = widget.NewLabel("")
 	g.rawCanBusFrameOutput.Wrapping = fyne.TextWrapWord
@@ -40,7 +43,7 @@ func (g *GUI) RunApp() {
 
 	// Turn off auto scroll when user scrolls up.
 	g.rawCanBusFrameViewer.OnScrolled = func(offset fyne.Position) {
-		if offset.Y+g.rawCanBusFrameViewer.Size().Height >= g.rawCanBusFrameViewer.Content.Size().Height - 20 { //todo: make auto scroll offset const and tune for feel
+		if offset.Y+g.rawCanBusFrameViewer.Size().Height >= g.rawCanBusFrameViewer.Content.Size().Height-20 {
 			g.autoScroll = true // User is near the bottom
 		} else {
 			g.autoScroll = false // User scrolled up
@@ -67,11 +70,12 @@ func (g *GUI) RunApp() {
 		g.rawCanBusFrameViewer,
 	)
 
-	w.SetContent(content)
-	w.Resize(fyne.NewSize(600, 400))
-	w.ShowAndRun()
+	g.window.SetContent(content)
+	g.window.Resize(fyne.NewSize(600, 400))
 
-	w.ShowAndRun()
+	g.isRunning = true
+
+	g.window.ShowAndRun()
 }
 
 // SetSendManualCanBusFrameCallback allows setting the callback for sending manual CAN bus frames.
@@ -81,10 +85,14 @@ func (g *GUI) SetSendManualCanBusFrameCallback(callback func(string)) {
 
 // OnCanBusFrameReceive is called when a new CAN bus frame is received.
 func (g *GUI) OnCanBusFrameReceive(frame *canbus.Frame) {
-	// Append the new frame to the output label and add a newline for better formatting
-	newText := g.rawCanBusFrameOutput.Text + frame.String() + "\n"
+	if !g.isRunning {
+		return
+	}
 
-	// Update the label text on the UI thread
+	// Append the new frame to the output label
+	newText := fmt.Sprintf("%s%s\n", g.rawCanBusFrameOutput.Text, frame.String())
+
+	// Update the label text
 	g.rawCanBusFrameOutput.SetText(newText)
 
 	// Auto-scroll if enabled

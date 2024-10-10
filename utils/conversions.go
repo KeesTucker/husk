@@ -9,7 +9,7 @@ import (
 func HexStringToBytes(s string) ([]byte, error) {
 	// Ensure the string has an even length
 	if len(s)%2 != 0 {
-		return nil, fmt.Errorf("error: hex string has an odd length: %v", s)
+		return nil, fmt.Errorf("error hex string has an odd length: %v", s)
 	}
 
 	// Pre-allocate the byte slice with the exact size
