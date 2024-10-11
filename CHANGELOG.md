@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/KeesTucker/husk/compare/husk-v1.0.1...husk-v1.0.2) (2024-10-11)
+
+
+### Bug Fixes
+
+* reference logo in fyne cross compile command ([4d545c0](https://github.com/KeesTucker/husk/commit/4d545c04bcb13c56710931b728c0d8036aac62d8))
+
 ## [1.0.1](https://github.com/KeesTucker/husk/compare/husk-v1.0.0...husk-v1.0.1) (2024-10-11)
 
 
