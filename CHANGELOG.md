@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/KeesTucker/husk/compare/husk-v1.0.2...husk-v1.0.3) (2024-10-11)
+
+
+### Bug Fixes
+
+* read timeout should be 1 ([f1e04fd](https://github.com/KeesTucker/husk/commit/f1e04fd5f47fff6b7ea187ec1471fc72eeaabd25))
+
 ## [1.0.2](https://github.com/KeesTucker/husk/compare/husk-v1.0.1...husk-v1.0.2) (2024-10-11)
 
 
