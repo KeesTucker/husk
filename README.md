@@ -10,6 +10,11 @@ There are several important disclaimers when using husk:
 - **Engine Damage:** Improper ECU calibration (e.g. Ignition Timing, Mass Airflow Calibration, Rev Limiter) can directly harm your motorbike’s engine. husk and its contributors are not responsible for any damage resulting from tool use.
 - **Legal Compliance:** Recalibrating regulated systems (e.g., emissions) is illegal. husk does not provide definitions for modifying these systems. By using husk, you agree to abide by all local regulations regarding these calibrations.
 
+## Workflows
+[![Build and Release](https://github.com/KeesTucker/husk/actions/workflows/build-release.yml/badge.svg)](https://github.com/KeesTucker/husk/actions/workflows/build-release.yml)
+[![Test](https://github.com/KeesTucker/husk/actions/workflows/test.yml/badge.svg)](https://github.com/KeesTucker/husk/actions/workflows/test.yml)
+
+
 ## Current Focus
 
 husk is currently being developed for the Husqvarna 701 but aims to expand support to more models and manufacturers once support for this model is completed. Feel free to contribute for your own motorbikes etc.
@@ -41,7 +46,7 @@ Non-compliance could jeopardize husk and other projects. Use husk responsibly an
 
 husk is licensed under the MIT License. This license permits code modification and functionality addition while promoting the use of husk for both personal and commercial purposes, as long as the original copyright notice is included.
 
-## Project Setup & Building
+## Project Setup
 
 To build husk from the source, follow these steps:
 
@@ -57,16 +62,4 @@ To build husk from the source, follow these steps:
 4. **Install Dependencies:**
    ```bash
    go mod tidy
-   ```
-
-5. **Compile the Code:**
-   To build the project, run:
-   ```bash
-   go build -o husk.exe
-   ```
-
-6. **Run the Application:**
-   After building, you can run the application using:
-   ```bash
-   ./husk.exe
    ```
