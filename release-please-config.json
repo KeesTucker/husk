@@ -1,0 +1,9 @@
+{
+  "release-type": "go",
+  "packages": {
+    ".": {
+      "changelog-path": "CHANGELOG.md",
+      "component": "husk"
+    }
+  }
+}
