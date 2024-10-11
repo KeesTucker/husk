@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/KeesTucker/husk/compare/husk-v1.0.3...husk-v1.0.4) (2024-10-11)
+
+
+### Bug Fixes
+
+* deleted icon it was causing issues on build ([d9454f5](https://github.com/KeesTucker/husk/commit/d9454f50ea30cc00b1475f6bedd99a87d254e50a))
+
 ## [1.0.3](https://github.com/KeesTucker/husk/compare/husk-v1.0.2...husk-v1.0.3) (2024-10-11)
 
 
