@@ -15,49 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23.2'
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      - name: Set up Fyne Dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+      - name: Cross-Compile for Windows
+        run: fyne-cross windows -arch=* --app-id com.keestucker.husk
 
-      - name: Go Mod Tidy
-        run: go mod tidy
-
-      - name: Build Application
-        run: go build -v -o husk
-
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
-      - name: "Release Please"
+      - name: Release Please
         id: release_please
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Release Information
-        id: extract_release_info
+      - name: Upload Windows Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: |
-          echo ${{ steps.release_please.outputs.release_created_output }} > release_created.json
-          TAG_NAME=$(jq -r '.[0].tagName' release_created.json)
-          UPLOAD_URL=$(jq -r '.[0].uploadUrl' release_created.json)
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
-          echo "UPLOAD_URL=$UPLOAD_URL" >> $GITHUB_ENV
-      
-      - name: Debug Release Please Outputs
-        run: |
-          echo "release_created: ${{ steps.release_please.outputs.release_created }}"
-          echo "release_created_output: ${{ steps.release_please.outputs.release_created_output }}"
-
-      - name: Upload Release Asset
-        if: ${{ steps.release_please.outputs.releases_created == 'true' }}
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ env.UPLOAD_URL }}
-          asset_path: ./husk
-          asset_name: husk
+          upload_url: ${{ steps.release_please.outputs.upload_url }}
+          asset_path: ./fyne-cross/bin/windows-amd64
+          asset_name: husk.exe
           asset_content_type: application/octet-stream
