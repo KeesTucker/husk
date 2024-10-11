@@ -28,11 +28,11 @@ jobs:
 
       - name: Cross-Compile for Windows
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross windows --app-id com.keestucker.husk --icon ./Icon.png
+        run: fyne-cross windows --app-id com.keestucker.husk
 
       - name: Cross-Compile for Linux
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross linux --app-id com.keestucker.husk --icon ./Icon.png
+        run: fyne-cross linux --app-id com.keestucker.husk
 
       - name: Upload Windows amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
