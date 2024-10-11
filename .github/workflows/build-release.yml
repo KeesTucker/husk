@@ -42,9 +42,9 @@ jobs:
         id: extract_release_info
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
         run: |
-          echo ${{ steps.release_please.outputs.releases_created }} > releases_created.json
-          TAG_NAME=$(jq -r '.[0].tagName' releases_created.json)
-          UPLOAD_URL=$(jq -r '.[0].uploadUrl' releases_created.json)
+          echo ${{ steps.release_please.outputs.release_created_output }} > release_created.json
+          TAG_NAME=$(jq -r '.tagName' release_created.json)
+          UPLOAD_URL=$(jq -r '.uploadUrl' release_created.json)
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           echo "UPLOAD_URL=$UPLOAD_URL" >> $GITHUB_ENV
       
