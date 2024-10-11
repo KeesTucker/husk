@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/KeesTucker/husk/compare/husk-v1.0.0...husk-v1.0.1) (2024-10-11)
+
+
+### Bug Fixes
+
+* increased read timeout to 5 milliseconds ([1050f11](https://github.com/KeesTucker/husk/commit/1050f11f0c8127e730612a3a066bef2fc8f41187))
+
 ## 1.0.0 (2024-10-11)
 
 
