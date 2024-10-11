@@ -60,7 +60,7 @@ To build husk from the source, follow these steps:
 2. **Set Up Your Environment:**
    Make sure you have [Go](https://golang.org/dl/) installed (Version 1.23.2 or later) and properly set up on your machine.
 3. **Install Fyne:**
-   Husk uses the Fyne framework for the UI. Please refer to the Fyne [docs]((https://docs.fyne.io/started/)) for installation instructions.
+   Husk uses the Fyne framework for the UI. Please refer to the Fyne [docs](https://docs.fyne.io/started/) for installation instructions.
 4. **Install Dependencies:**
    ```bash
    go mod tidy
