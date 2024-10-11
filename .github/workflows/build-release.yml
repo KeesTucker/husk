@@ -43,15 +43,14 @@ jobs:
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
         run: |
           echo ${{ steps.release_please.outputs.release_created_output }} > release_created.json
-          TAG_NAME=$(jq -r '.[0].tagName' release_created.json)
-          UPLOAD_URL=$(jq -r '.[0].uploadUrl' release_created.json)
+          TAG_NAME=$(jq -r '.tagName' release_created.json)
+          UPLOAD_URL=$(jq -r '.uploadUrl' release_created.json)
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           echo "UPLOAD_URL=$UPLOAD_URL" >> $GITHUB_ENV
-      
+
       - name: Debug Release Please Outputs
         run: |
-          echo "release_created: ${{ steps.release_please.outputs.release_created }}"
-          echo "release_created_output: ${{ steps.release_please.outputs.release_created_output }}"
+          echo "outputs: ${{ toJSON(steps.release_please.outputs) }}"
 
       - name: Upload Release Asset
         if: ${{ steps.release_please.outputs.releases_created == 'true' }}
