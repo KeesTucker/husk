@@ -28,15 +28,11 @@ jobs:
 
       - name: Cross-Compile for Windows
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross windows --app-id com.keestucker.husk
+        run: fyne-cross windows --app-id com.keestucker.husk --icon ./Icon.png
 
       - name: Cross-Compile for Linux
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross linux --app-id com.keestucker.husk
-
-      - name: Cross-Compile for macOS
-        if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross darwin --app-id com.keestucker.husk
+        run: fyne-cross linux --app-id com.keestucker.husk --icon ./Icon.png
 
       - name: Upload Windows amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
@@ -49,17 +45,6 @@ jobs:
           asset_name: husk-windows-amd64.exe
           asset_content_type: application/octet-stream
 
-      - name: Upload Windows 386 Build
-        if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.release_please.outputs.upload_url }}
-          asset_path: ./fyne-cross/bin/windows-386/husk.exe
-          asset_name: husk-windows-386.exe
-          asset_content_type: application/octet-stream
-
       - name: Upload Linux amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
         uses: actions/upload-release-asset@v1
@@ -70,25 +55,3 @@ jobs:
           asset_path: ./fyne-cross/bin/linux-amd64/husk
           asset_name: husk-linux-amd64
           asset_content_type: application/octet-stream
-
-      - name: Upload Linux 386 Build
-        if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.release_please.outputs.upload_url }}
-          asset_path: ./fyne-cross/bin/linux-386/husk
-          asset_name: husk-linux-386
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS Build
-        if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.release_please.outputs.upload_url }}
-          asset_path: ./fyne-cross/bin/darwin-amd64/husk.app.zip
-          asset_name: husk-macOS.app.zip
-          asset_content_type: application/zip
