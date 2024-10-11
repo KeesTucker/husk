@@ -49,9 +49,6 @@ Non-compliance could jeopardize husk and other projects. Use husk responsibly an
 husk is licensed under the MIT License. This license permits code modification and functionality addition while promoting the use of husk for both personal and commercial purposes, as long as the original copyright notice is included.
 
 ## Project Setup
-
-To build husk from the source, follow these steps:
-
 1. **Clone the Repository:**
    ```bash
    git clone https://github.com/KeesTucker/husk.git
