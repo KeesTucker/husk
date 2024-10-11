@@ -47,11 +47,10 @@ jobs:
           UPLOAD_URL=$(jq -r '.[0].uploadUrl' release_created.json)
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           echo "UPLOAD_URL=$UPLOAD_URL" >> $GITHUB_ENV
-      
+
       - name: Debug Release Please Outputs
         run: |
-          echo "release_created: ${{ steps.release_please.outputs.release_created }}"
-          echo "release_created_output: ${{ steps.release_please.outputs.release_created_output }}"
+          echo "outputs: ${{ steps.release_please.outputs }}"
 
       - name: Upload Release Asset
         if: ${{ steps.release_please.outputs.releases_created == 'true' }}
