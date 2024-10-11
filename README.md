@@ -14,6 +14,8 @@ There are several important disclaimers when using husk:
 [![Build and Release](https://github.com/KeesTucker/husk/actions/workflows/build-release.yml/badge.svg)](https://github.com/KeesTucker/husk/actions/workflows/build-release.yml)
 [![Test](https://github.com/KeesTucker/husk/actions/workflows/test.yml/badge.svg)](https://github.com/KeesTucker/husk/actions/workflows/test.yml)
 
+## Releases
+Please see the releases tab for Windows & Linux builds. macOS coming soon.
 
 ## Current Focus
 
