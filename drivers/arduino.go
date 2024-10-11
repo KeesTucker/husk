@@ -18,7 +18,7 @@ const (
 	ACK         = 0x06
 	NACK        = 0x15
 	MaxRetries  = 3
-	ReadTimeout = 5 * time.Millisecond
+	ReadTimeout = 1 * time.Millisecond
 	ACKTimeout  = 100 * time.Millisecond
 	RetryDelay  = 100 * time.Millisecond
 )
