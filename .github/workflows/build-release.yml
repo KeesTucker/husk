@@ -36,22 +36,20 @@ jobs:
 
       - name: Upload Windows amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.release_please.outputs.upload_url }}
-          asset_path: ./fyne-cross/bin/windows-amd64/husk.exe
-          asset_name: husk-windows-amd64.exe
-          asset_content_type: application/octet-stream
+        run: |
+          gh release upload ${{ steps.release_please.outputs.tag_name }} \
+            ./fyne-cross/bin/windows-amd64/husk.exe \
+            --name "husk-windows-amd64.exe" \
+            --content-type "application/octet-stream"
 
       - name: Upload Linux amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.release_please.outputs.upload_url }}
-          asset_path: ./fyne-cross/bin/linux-amd64/husk
-          asset_name: husk-linux-amd64
-          asset_content_type: application/octet-stream
+        run: |
+          gh release upload ${{ steps.release_please.outputs.tag_name }} \
+            ./fyne-cross/bin/linux-amd64/husk \
+            --name "husk-linux-amd64" \
+            --content-type "application/octet-stream"
