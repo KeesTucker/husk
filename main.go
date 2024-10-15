@@ -53,7 +53,7 @@ func main() {
 		}
 
 		frame := canbus.Frame{
-			ID:  canbus.CanIDTransmit,
+			ID:  canbus.CanIDTester,
 			DLC: dlc,
 		}
 		copy(frame.Data[:], data)
@@ -90,16 +90,15 @@ func main() {
 		}
 	}()
 
-	// Run the GUI application (this will block, but frame reading runs in parallel)
+	// Start a separate goroutine to listen for OS signals to handle shutdown gracefully
 	go func() {
-		g.RunApp()
-		// Cancel the context when the GUI finishes running to ensure proper cleanup
+		<-signalChan
+		l.WriteToLog("Received shutdown signal, canceling context and cleaning up...")
 		cancel()
 	}()
 
-	// Wait for an interrupt signal to gracefully shut down
-	<-signalChan
-	l.WriteToLog("Received shutdown signal, canceling context and cleaning up...")
+	// Run the GUI application (this will block, but frame reading runs in parallel)
+	g.RunApp()
 
 	// Ensure cleanup of resources
 	if err = d.Cleanup(); err != nil {

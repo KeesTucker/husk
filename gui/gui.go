@@ -12,6 +12,7 @@ import (
 const (
 	windowName                        = "husk"
 	manualCanBusFrameEntryPlaceholder = "enter can bus message here"
+	maxLogCharsLen                    = 10000
 )
 
 type GUI struct {
@@ -90,7 +91,7 @@ func (g *GUI) OnCanBusFrameReceive(frame *canbus.Frame) {
 	}
 
 	// Append the new frame to the output label
-	g.WriteToLog(fmt.Sprintf("%s%s\n", g.logLabel.Text, frame.String()))
+	g.WriteToLog(frame.String())
 }
 
 // WriteToLog writes the gui log
@@ -99,8 +100,21 @@ func (g *GUI) WriteToLog(newText string) {
 		return
 	}
 
-	// Update the label text
-	g.logLabel.SetText(newText)
+	// Combine existing log text with the new text
+	combinedText := fmt.Sprintf("%s%s\n", g.logLabel.Text, newText)
+
+	// Convert to runes to handle multi-byte characters properly
+	runes := []rune(combinedText)
+
+	// Check if the combined text exceeds 1000 characters
+	if len(runes) > maxLogCharsLen {
+		// Trim the oldest characters to maintain a 1000-character limit
+		runes = runes[len(runes)-maxLogCharsLen:]
+		combinedText = string(runes)
+	}
+
+	// Update the label text with the capped log
+	g.logLabel.SetText(combinedText)
 
 	// Auto-scroll if enabled
 	if g.autoScroll {

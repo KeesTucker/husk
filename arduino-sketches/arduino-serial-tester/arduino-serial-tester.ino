@@ -7,39 +7,47 @@ const byte ESCAPE_CHAR = 0x1B;
 const byte ACK = 0x06;
 const byte NACK = 0x15;
 
-struct can_frame frame;
+struct can_frame readFrame;
+struct can_frame writeFrame;
 
 const int MAX_RETRIES = 3; // Maximum number of retries
 const unsigned long READ_TIMEOUT_MS = 10; // Timeout for waiting on Serial
 const unsigned long ACK_TIMEOUT_MS = 100; // Timeout for waiting for ACK/NACK
 const unsigned long RETRY_DELAY_MS = 100; // Timeout for waiting for ACK/NACK
 
+// Testing vars
+const unsigned long sendInterval = 100;
+unsigned long lastSendTime = 0;
+uint8_t counter = 0;
+
 void setup() {
     Serial.begin(115200);
 }
 
+
 void loop() {
-    // Check for incoming frames
+    // 1. Check for incoming CAN frames
     if (Serial.available() > 0) {
-        if (readCanBusFrame(frame)) {
-            // Validate the frame
-            if (frame.can_dlc <= 8) {
-                // Send the CAN frame back for testing purposes
-                randomSeed(analogRead(0));
-                uint16_t canId = random(0, 2048);
-                frame.can_id = canId;
-                sendCanBusFrame(frame);
-            }
-        }
+        readCanBusFrame(readFrame);
     }
 
-    /*randomSeed(analogRead(0));
-    uint16_t canId = random(0, 2048);
-    frame.can_id = canId;
-    frame.can_dlc = 1;
-    frame.data[0] = 0x03;
-    sendCanBusFrame(frame);
-    delay(1000);*/
+    // 2. Check if it's time to send a CAN frame
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastSendTime >= sendInterval) {
+        // Prepare the CAN frame
+        writeFrame.can_id = 0x7E8;      // Example CAN ID
+        writeFrame.can_dlc = 1;         // Data length code
+        writeFrame.data[0] = counter;    // Example data payload
+
+        // Send the CAN frame
+        sendCanBusFrame(writeFrame);
+
+        // Increment the counter
+        counter++;
+
+        // Update the last send time
+        lastSendTime = currentMillis;
+    }
 }
 
 bool readByteWithTimeout(byte &result, unsigned long timeoutMs = READ_TIMEOUT_MS) {
@@ -229,42 +237,33 @@ bool waitForACK() {
 
 byte calculateCRC8(const struct can_frame &frame) {
     byte crc = 0x00;
-    const byte polynomial = 0x07; // CRC-8-CCITT
 
     // Include CAN ID (2 bytes)
-    byte idBytes[2] = {(byte)(frame.can_id >> 8), (byte)(frame.can_id & 0xFF)};
+    byte idBytes[2] = { (byte)(frame.can_id >> 8), (byte)(frame.can_id & 0xFF) };
     for (int i = 0; i < 2; i++) {
-        crc ^= idBytes[i];
-        for (byte j = 0; j < 8; j++) {
-            if (crc & 0x80) {
-                crc = (crc << 1) ^ polynomial;
-            } else {
-                crc <<= 1;
-            }
-        }
+        crc = xorShift(crc, idBytes[i]);
     }
 
     // Include DLC
-    crc ^= frame.can_dlc;
-    for (byte j = 0; j < 8; j++) {
+    crc = xorShift(crc, frame.can_dlc);
+
+    // Include Data bytes
+    for (size_t i = 0; i < frame.can_dlc; i++) {
+        crc = xorShift(crc, frame.data[i]);
+    }
+
+    return crc;
+}
+
+byte xorShift(byte crc, byte b) {
+    const byte polynomial = 0x07; // CRC-8-CCITT
+    crc ^= b;
+    for (byte i = 0; i < 8; i++) {
         if (crc & 0x80) {
             crc = (crc << 1) ^ polynomial;
         } else {
             crc <<= 1;
         }
     }
-
-    // Include Data bytes
-    for (size_t i = 0; i < frame.can_dlc; i++) {
-        crc ^= frame.data[i];
-        for (byte j = 0; j < 8; j++) {
-            if (crc & 0x80) {
-                crc = (crc << 1) ^ polynomial;
-            } else {
-                crc <<= 1;
-            }
-        }
-    }
-
     return crc;
 }

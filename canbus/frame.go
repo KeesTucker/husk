@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const CanIDTransmit = 0x7E0
+const CanIDTester = 0x7E0
 
 // Frame represents a CAN bus data frame with an 11-bit identifier.
 type Frame struct {

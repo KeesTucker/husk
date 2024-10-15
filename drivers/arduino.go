@@ -32,6 +32,7 @@ type ArduinoDriver struct {
 	port      serial.Port
 	readChan  chan []byte
 	writeChan chan []byte
+	ackChan   chan bool
 	cancel    context.CancelFunc
 }
 
@@ -42,8 +43,9 @@ func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriv
 	arduinoDriver := &ArduinoDriver{
 		ctx:       ctx,
 		l:         logger,
-		readChan:  make(chan []byte, 10), // Buffered channels to prevent blocking
+		readChan:  make(chan []byte, 10),
 		writeChan: make(chan []byte, 10),
+		ackChan:   make(chan bool, 10),
 		cancel:    cancel,
 	}
 
@@ -115,28 +117,19 @@ func (d *ArduinoDriver) SendCanBusFrame(frame canbus.Frame) error {
 	retryDelay := RetryDelay
 
 	for retries := 0; retries < MaxRetries && !ackReceived; retries++ {
-		// Send frame to the write channel
-		select {
-		case d.writeChan <- frameBytes:
-		case <-d.ctx.Done():
-			return fmt.Errorf("operation cancelled")
-		}
+		// Send frame to the write channel without context.Done() check
+		d.writeChan <- frameBytes
 
 		d.l.WriteToLog(fmt.Sprintf("Sent frame: %v (attempt %d)", frameBytes, retries+1))
 
 		// Wait for ACK or NACK
 		select {
-		case ackBuffer := <-d.readChan:
-			if len(ackBuffer) > 0 {
-				if ackBuffer[0] == ACK {
-					ackReceived = true
-					d.l.WriteToLog("ACK received successfully")
-
-					return nil
-				} else if ackBuffer[0] == NACK {
-					d.l.WriteToLog("NACK received from Arduino")
-				}
+		case ackReceived = <-d.ackChan:
+			if ackReceived {
+				d.l.WriteToLog("ACK received successfully")
+				return nil
 			}
+			d.l.WriteToLog("NACK received from Arduino")
 		case <-time.After(ACKTimeout):
 			d.l.WriteToLog("ACK timeout")
 		case <-d.ctx.Done():
@@ -183,7 +176,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 
 		if len(unstuffedBytes) < 3+int(dlc)+1 {
 			d.writeErrorResponse()
-			return nil, fmt.Errorf("error: incomplete frame received, expected %d bytes but got %d", 3+int(dlc), len(unstuffedBytes))
+			return nil, fmt.Errorf("error: incomplete frame received, expected %d bytes but got %d", 3+int(dlc)+1, len(unstuffedBytes))
 		}
 
 		var dataBuffer [8]uint8
@@ -218,30 +211,81 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 	}
 }
 
-// readLoop continuously reads from the serial port and sends data to the read channel.
+// readLoop continuously reads from the serial port and sends complete frames to the read channel.
 func (d *ArduinoDriver) readLoop() {
-	byteBuffer := make([]byte, 1)
+	var buffer []byte
+	inFrame := false
 
 	for {
 		select {
 		case <-d.ctx.Done():
 			return
 		default:
+			byteBuffer := make([]byte, 1)
 			n, err := d.port.Read(byteBuffer)
 			if err != nil && err != io.EOF {
 				d.l.WriteToLog(fmt.Sprintf("error reading from port: %s", err))
 				continue
 			}
 
-			if n > 0 {
+			if n <= 0 {
+				continue
+			}
+
+			b := byteBuffer[0]
+
+			// Handle ACK or NACK bytes immediately
+			if !inFrame && (b == ACK || b == NACK) {
 				select {
-				case d.readChan <- append([]byte{}, byteBuffer...):
-				case <-d.ctx.Done():
-					return
+				case d.ackChan <- ackByteToBool(b):
+					// Successfully sent ACK/NACK
+				default:
+					d.l.WriteToLog("ackChan is full, dropping ACK/NACK")
 				}
+				continue
+			}
+
+			switch {
+			case b == StartMarker:
+				// Start of a new frame
+				inFrame = true
+				buffer = []byte{} // Reset the buffer for the new frame
+
+			case b == EndMarker && inFrame:
+				// End of the current frame
+				inFrame = false
+				d.readChan <- buffer
+
+			case inFrame && b == EscapeChar:
+				// Handle byte stuffing
+				n, err := d.port.Read(byteBuffer)
+				if err != nil && err != io.EOF {
+					d.l.WriteToLog(fmt.Sprintf("error reading from port after escape character: %s", err))
+					continue
+				}
+				if n > 0 {
+					unstuffedByte, err := d.unstuffByte(byteBuffer[0])
+					if err != nil {
+						d.l.WriteToLog(err.Error())
+						continue
+					}
+					buffer = append(buffer, unstuffedByte)
+				}
+
+			case inFrame:
+				// Add the byte to the current frame buffer
+				buffer = append(buffer, b)
 			}
 		}
 	}
+}
+
+func ackByteToBool(b byte) bool {
+	if b == ACK {
+		return true
+	}
+
+	return false
 }
 
 // writeLoop continuously writes data from the write channel to the serial port.
@@ -269,11 +313,8 @@ func (d *ArduinoDriver) writeErrorResponse() {
 
 // sendResponse sends a response (ACK/NACK) to the Arduino.
 func (d *ArduinoDriver) sendResponse(response byte) error {
-	select {
-	case d.writeChan <- []byte{response}:
-	case <-d.ctx.Done():
-		return fmt.Errorf("error: failed to send response, operation cancelled")
-	}
+	d.writeChan <- []byte{response}
+	d.l.WriteToLog(fmt.Sprintf("Sent ACK %v", ackByteToBool(response)))
 	return nil
 }
 
@@ -326,6 +367,20 @@ func (d *ArduinoDriver) stuffByte(b byte, output *[]byte) {
 		*output = append(*output, EscapeChar, 0x03)
 	default:
 		*output = append(*output, b)
+	}
+}
+
+// unstuffByte handles byte unstuffing and returns the original byte.
+func (d *ArduinoDriver) unstuffByte(b byte) (byte, error) {
+	switch b {
+	case 0x01:
+		return StartMarker, nil
+	case 0x02:
+		return EndMarker, nil
+	case 0x03:
+		return EscapeChar, nil
+	default:
+		return 0, fmt.Errorf("error: invalid escape sequence")
 	}
 }
 
