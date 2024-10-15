@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.7](https://github.com/KeesTucker/husk/compare/husk-v1.0.6...husk-v1.0.7) (2024-10-15)
+
+
+### Bug Fixes
+
+* rename build files. ([109e154](https://github.com/KeesTucker/husk/commit/109e1545a6237c2b14cf6b855f87084ddc4bbcc9))
+
 ## [1.0.6](https://github.com/KeesTucker/husk/compare/husk-v1.0.5...husk-v1.0.6) (2024-10-15)
 
 
