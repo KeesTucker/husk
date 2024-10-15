@@ -40,7 +40,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ steps.release_please.outputs.tag_name }} \
-            ./fyne-cross/bin/windows-amd64/husk.exe \
+            ./fyne-cross/bin/windows-amd64/husk-windows-amd64.exe \
 
       - name: Upload Linux amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
@@ -48,4 +48,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ steps.release_please.outputs.tag_name }} \
-            ./fyne-cross/bin/linux-amd64/husk \
+            ./fyne-cross/bin/linux-amd64/husk-linux-amd64 \
