@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6](https://github.com/KeesTucker/husk/compare/husk-v1.0.5...husk-v1.0.6) (2024-10-15)
+
+
+### Bug Fixes
+
+* fixed github workflows to correctly upload builds to release ([2069985](https://github.com/KeesTucker/husk/commit/2069985d13d1edcb6f0b0a6c06f78a456b7e4e95))
+
 ## [1.0.5](https://github.com/KeesTucker/husk/compare/husk-v1.0.4...husk-v1.0.5) (2024-10-15)
 
 
