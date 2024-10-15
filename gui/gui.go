@@ -23,8 +23,8 @@ type GUI struct {
 	autoScroll bool
 
 	// UI elements
-	rawCanBusFrameViewer *container.Scroll
-	rawCanBusFrameOutput *widget.Label
+	logScrollContainer *container.Scroll
+	logLabel           *widget.Label
 
 	// callbacks
 	sendManualCanBusFrameCallback func(string)
@@ -34,16 +34,16 @@ func (g *GUI) RunApp() {
 	g.app = app.New()
 	g.window = g.app.NewWindow(windowName)
 
-	g.rawCanBusFrameOutput = widget.NewLabel("")
-	g.rawCanBusFrameOutput.Wrapping = fyne.TextWrapWord
+	g.logLabel = widget.NewLabel("")
+	g.logLabel.Wrapping = fyne.TextWrapWord
 
-	g.rawCanBusFrameViewer = container.NewVScroll(g.rawCanBusFrameOutput)
-	g.rawCanBusFrameViewer.SetMinSize(fyne.NewSize(400, 300))
+	g.logScrollContainer = container.NewVScroll(g.logLabel)
+	g.logScrollContainer.SetMinSize(fyne.NewSize(400, 300))
 	g.autoScroll = true
 
 	// Turn off auto scroll when user scrolls up.
-	g.rawCanBusFrameViewer.OnScrolled = func(offset fyne.Position) {
-		if offset.Y+g.rawCanBusFrameViewer.Size().Height >= g.rawCanBusFrameViewer.Content.Size().Height-20 {
+	g.logScrollContainer.OnScrolled = func(offset fyne.Position) {
+		if offset.Y+g.logScrollContainer.Size().Height >= g.logScrollContainer.Content.Size().Height-20 {
 			g.autoScroll = true // User is near the bottom
 		} else {
 			g.autoScroll = false // User scrolled up
@@ -67,7 +67,7 @@ func (g *GUI) RunApp() {
 		manualCanBusFrameEntryContainer,
 		nil,
 		nil,
-		g.rawCanBusFrameViewer,
+		g.logScrollContainer,
 	)
 
 	g.window.SetContent(content)
@@ -90,25 +90,20 @@ func (g *GUI) OnCanBusFrameReceive(frame *canbus.Frame) {
 	}
 
 	// Append the new frame to the output label
-	g.writeToLog(fmt.Sprintf("%s%s\n", g.rawCanBusFrameOutput.Text, frame.String()))
+	g.WriteToLog(fmt.Sprintf("%s%s\n", g.logLabel.Text, frame.String()))
 }
 
-// DisplayError is called when an error is received.
-func (g *GUI) DisplayError(err error) {
+// WriteToLog writes the gui log
+func (g *GUI) WriteToLog(newText string) {
 	if !g.isRunning {
 		return
 	}
 
-	// Append the new frame to the output label
-	g.writeToLog(fmt.Sprintf("%s%s\n", g.rawCanBusFrameOutput.Text, err))
-}
-
-func (g *GUI) writeToLog(newText string) {
 	// Update the label text
-	g.rawCanBusFrameOutput.SetText(newText)
+	g.logLabel.SetText(newText)
 
 	// Auto-scroll if enabled
 	if g.autoScroll {
-		g.rawCanBusFrameViewer.ScrollToBottom()
+		g.logScrollContainer.ScrollToBottom()
 	}
 }

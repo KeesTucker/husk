@@ -1,37 +1,51 @@
 package drivers
 
 import (
+	"context"
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"husk/canbus"
+	"husk/logging"
 	"io"
-	"sync"
 	"time"
 )
 
 const (
-	BaudRate    = 115200
-	StartMarker = 0x7E
-	EndMarker   = 0x7F
-	EscapeChar  = 0x1B
-	ACK         = 0x06
-	NACK        = 0x15
-	MaxRetries  = 3
-	ReadTimeout = 1 * time.Millisecond
-	ACKTimeout  = 100 * time.Millisecond
-	RetryDelay  = 100 * time.Millisecond
+	BaudRate                 = 115200
+	StartMarker              = 0x7E
+	EndMarker                = 0x7F
+	EscapeChar               = 0x1B
+	ACK                      = 0x06
+	NACK                     = 0x15
+	MaxRetries               = 3
+	ReadTimeout              = 10 * time.Millisecond
+	ACKTimeout               = 100 * time.Millisecond
+	RetryDelay               = 100 * time.Millisecond
+	ExponentialBackoffFactor = 2
 )
 
 // ArduinoDriver handles serial communication with an Arduino device.
 type ArduinoDriver struct {
-	port        serial.Port
-	serialMutex sync.Mutex
+	ctx       context.Context
+	l         *logging.Logger
+	port      serial.Port
+	readChan  chan []byte
+	writeChan chan []byte
+	cancel    context.CancelFunc
 }
 
 // NewArduinoDriver initializes and returns a new ArduinoDriver.
-func NewArduinoDriver() (*ArduinoDriver, error) {
-	arduinoDriver := &ArduinoDriver{}
+func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriver, error) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	arduinoDriver := &ArduinoDriver{
+		ctx:       ctx,
+		l:         logger,
+		readChan:  make(chan []byte, 10), // Buffered channels to prevent blocking
+		writeChan: make(chan []byte, 10),
+		cancel:    cancel,
+	}
 
 	// Find Arduino port
 	portName, err := findArduinoPortName()
@@ -51,6 +65,12 @@ func NewArduinoDriver() (*ArduinoDriver, error) {
 		return nil, err
 	}
 
+	arduinoDriver.l.WriteToLog(fmt.Sprintf("Arduino connected on port %s", portName))
+
+	// Start read and write loops
+	go arduinoDriver.readLoop()
+	go arduinoDriver.writeLoop()
+
 	return arduinoDriver, nil
 }
 
@@ -64,256 +84,206 @@ func findArduinoPortName() (string, error) {
 	// Find the first matching USB port
 	for _, port := range ports {
 		if port.IsUSB {
+			// VID 2341 for Arduino, 1A86 for CH340, 2A03 for Arduino clone
 			if port.VID == "2341" || port.VID == "1A86" || port.VID == "2A03" {
 				return port.Name, nil
 			}
 		}
 	}
 
-	return "", fmt.Errorf("error no Arduino found on the USB ports")
+	return "", fmt.Errorf("error: no Arduino found on the USB ports")
 }
 
-// Cleanup closes the serial port and stops the read loop.
+// Cleanup closes the serial port and stops the read and write loops.
 func (d *ArduinoDriver) Cleanup() error {
+	d.cancel()
 	if d.port != nil {
-		return d.port.Close()
+		err := d.port.Close()
+		if err != nil {
+			d.l.WriteToLog(fmt.Sprintf("error closing port: %s", err.Error()))
+			return err
+		}
+		d.l.WriteToLog("Serial port closed successfully")
 	}
-
 	return nil
 }
 
 // SendCanBusFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
 func (d *ArduinoDriver) SendCanBusFrame(frame canbus.Frame) error {
-	d.serialMutex.Lock()
-	defer d.serialMutex.Unlock()
-
 	frameBytes := d.createFrameBytes(frame)
-
 	ackReceived := false
+	retryDelay := RetryDelay
 
 	for retries := 0; retries < MaxRetries && !ackReceived; retries++ {
-		// Write to serial port
-		_, err := d.port.Write(frameBytes)
-		if err != nil {
-			return err
+		// Send frame to the write channel
+		select {
+		case d.writeChan <- frameBytes:
+		case <-d.ctx.Done():
+			return fmt.Errorf("operation cancelled")
 		}
 
+		d.l.WriteToLog(fmt.Sprintf("Sent frame: %v (attempt %d)", frameBytes, retries+1))
+
 		// Wait for ACK or NACK
-		ackReceived, err = d.waitForAck()
-		if err != nil {
-			return err
+		select {
+		case ackBuffer := <-d.readChan:
+			if len(ackBuffer) > 0 {
+				if ackBuffer[0] == ACK {
+					ackReceived = true
+					d.l.WriteToLog("ACK received successfully")
+
+					return nil
+				} else if ackBuffer[0] == NACK {
+					d.l.WriteToLog("NACK received from Arduino")
+				}
+			}
+		case <-time.After(ACKTimeout):
+			d.l.WriteToLog("ACK timeout")
+		case <-d.ctx.Done():
+			return fmt.Errorf("operation cancelled")
 		}
 
 		if !ackReceived {
-			// Retry after a delay
-			time.Sleep(RetryDelay)
+			// Retry after a delay with exponential backoff
+			d.l.WriteToLog(fmt.Sprintf("ACK not received, retrying in %d milliseconds", retryDelay.Milliseconds()))
+			time.Sleep(retryDelay)
+			retryDelay *= ExponentialBackoffFactor
 		}
 	}
 
 	if !ackReceived {
-		return fmt.Errorf("error failed to receive ACK after %d retries", MaxRetries)
+		return fmt.Errorf("error: failed to receive ACK after %d retries", MaxRetries)
 	}
 
 	return nil
 }
 
-func (d *ArduinoDriver) waitForAck() (bool, error) {
-	timeout := time.After(ACKTimeout)
-	ackBuffer := make([]byte, 1)
+// ReadCanBusFrame retrieves a received CAN bus frame from the read channel.
+func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
+	select {
+	case unstuffedBytes := <-d.readChan:
+		if unstuffedBytes == nil {
+			return nil, nil
+		}
+
+		if len(unstuffedBytes) < 4 {
+			d.writeErrorResponse()
+			return nil, fmt.Errorf("error: incomplete frame received")
+		}
+
+		// CAN ID (2 bytes)
+		id := (uint16(unstuffedBytes[0]) << 8) | uint16(unstuffedBytes[1])
+
+		// DLC
+		dlc := unstuffedBytes[2]
+		if dlc > 8 {
+			d.writeErrorResponse()
+			return nil, fmt.Errorf("error: invalid DLC value: %d", dlc)
+		}
+
+		if len(unstuffedBytes) < 3+int(dlc)+1 {
+			d.writeErrorResponse()
+			return nil, fmt.Errorf("error: incomplete frame received, expected %d bytes but got %d", 3+int(dlc), len(unstuffedBytes))
+		}
+
+		var dataBuffer [8]uint8
+		copy(dataBuffer[:], unstuffedBytes[3:3+dlc])
+
+		frame := &canbus.Frame{
+			ID:  id,
+			DLC: dlc,
+		}
+		copy(frame.Data[:], dataBuffer[:])
+
+		// Checksum
+		receivedChecksum := unstuffedBytes[3+dlc]
+		calculatedChecksum := calculateCRC8(frame)
+
+		if calculatedChecksum != receivedChecksum {
+			d.writeErrorResponse()
+			return nil, fmt.Errorf("error: checksum mismatch")
+		}
+
+		// Send ACK
+		err := d.sendResponse(ACK)
+		if err != nil {
+			return nil, fmt.Errorf("error: failed to send ACK: %s", err.Error())
+		}
+
+		d.l.WriteToLog(fmt.Sprintf("Frame read successfully: %v", frame))
+		return frame, nil
+
+	case <-d.ctx.Done():
+		return nil, fmt.Errorf("operation cancelled")
+	}
+}
+
+// readLoop continuously reads from the serial port and sends data to the read channel.
+func (d *ArduinoDriver) readLoop() {
+	byteBuffer := make([]byte, 1)
 
 	for {
 		select {
-		case <-timeout:
-			return false, nil
+		case <-d.ctx.Done():
+			return
 		default:
-			n, err := d.port.Read(ackBuffer)
-			if err != nil {
-				if err == io.EOF {
-					continue
-				}
-				return false, err
+			n, err := d.port.Read(byteBuffer)
+			if err != nil && err != io.EOF {
+				d.l.WriteToLog(fmt.Sprintf("error reading from port: %s", err))
+				continue
 			}
 
 			if n > 0 {
-				if ackBuffer[0] == ACK {
-					return true, nil
-				} else if ackBuffer[0] == NACK {
-					return false, nil
+				select {
+				case d.readChan <- append([]byte{}, byteBuffer...):
+				case <-d.ctx.Done():
+					return
 				}
 			}
 		}
 	}
 }
 
-// ReadCanBusFrame retrieves a received CAN bus frame from the frames channel.
-func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
-	d.serialMutex.Lock()
-	defer d.serialMutex.Unlock()
-
-	// Read and unstuff the frame
-	unstuffed, err := d.readAndUnstuffFrame()
-	if err != nil {
-		_, err = d.port.Write([]byte{NACK})
-		if err != nil {
-			return nil, fmt.Errorf("error failed to send nack on read and unstuff error: %s", err)
+// writeLoop continuously writes data from the write channel to the serial port.
+func (d *ArduinoDriver) writeLoop() {
+	for {
+		select {
+		case <-d.ctx.Done():
+			return
+		case frameBytes := <-d.writeChan:
+			_, err := d.port.Write(frameBytes)
+			if err != nil {
+				d.l.WriteToLog(fmt.Sprintf("error writing to port: %s", err))
+			}
 		}
-		return nil, err
 	}
-
-	if unstuffed == nil {
-		return nil, nil
-	}
-
-	// Parse unstuffed data
-	if len(unstuffed) < 4 {
-		_, err = d.port.Write([]byte{NACK})
-		if err != nil {
-			return nil, fmt.Errorf("error failed to send nack on incomplete frame: %s", err)
-		}
-		return nil, fmt.Errorf("error incomplete frame received")
-	}
-
-	// CAN ID (2 bytes)
-	id := (uint16(unstuffed[0]) << 8) | uint16(unstuffed[1])
-
-	// DLC
-	dlc := unstuffed[2]
-	if dlc > 8 {
-		_, err = d.port.Write([]byte{NACK})
-		if err != nil {
-			return nil, fmt.Errorf("error failed to send nack on invalid DLC: %s", err)
-		}
-		return nil, fmt.Errorf("error invalid DLC value: %d", dlc)
-	}
-
-	// Data
-	if len(unstuffed) < 3+int(dlc)+1 {
-		_, err = d.port.Write([]byte{NACK})
-		if err != nil {
-			return nil, fmt.Errorf("error failed to send nack on incomplete frame: %s", err)
-		}
-		return nil, fmt.Errorf("error incomplete frame received, expected %d bytes but got %d", 3+int(dlc), len(unstuffed))
-	}
-	var dataBuffer [8]uint8
-	copy(dataBuffer[:], unstuffed[3:3+dlc])
-
-	// Create a new canbus.Frame object and populate it
-	frame := &canbus.Frame{
-		ID:  id,
-		DLC: dlc,
-	}
-	copy(frame.Data[:], dataBuffer[:])
-
-	// Checksum
-	receivedChecksum := unstuffed[3+dlc]
-	calculatedChecksum := calculateCRC8(frame)
-
-	// Verify checksum
-	if calculatedChecksum != receivedChecksum {
-		_, err = d.port.Write([]byte{NACK})
-		if err != nil {
-			return nil, fmt.Errorf("error failed to send nack on bad checksum: %s", err)
-		}
-		return nil, fmt.Errorf("error checksum mismatch")
-	}
-
-	// Send ACK
-	_, err = d.port.Write([]byte{ACK})
-	if err != nil {
-		return nil, fmt.Errorf("error failed to send ack: %s", err)
-	}
-
-	return frame, nil
 }
 
-// readAndUnstuffFrame reads bytes from the serial port and removes byte stuffing.
-func (d *ArduinoDriver) readAndUnstuffFrame() ([]byte, error) {
-	byteBuffer := make([]byte, 1)
-
-	_, err := d.port.Read(byteBuffer)
+// writeErrorResponse sends a NACK
+func (d *ArduinoDriver) writeErrorResponse() {
+	err := d.sendResponse(NACK)
 	if err != nil {
-		return nil, err
+		d.l.WriteToLog(fmt.Sprintf("error while trying to send NACK: %s", err.Error()))
 	}
-	b := byteBuffer[0]
-	if b != StartMarker {
-		return nil, nil
+}
+
+// sendResponse sends a response (ACK/NACK) to the Arduino.
+func (d *ArduinoDriver) sendResponse(response byte) error {
+	select {
+	case d.writeChan <- []byte{response}:
+	case <-d.ctx.Done():
+		return fmt.Errorf("error: failed to send response, operation cancelled")
 	}
-
-	// Buffer for storing unstuffed bytes
-	var unstuffed []byte
-
-	// Read bytes until the end marker is found
-	for {
-		_, err = d.port.Read(byteBuffer)
-		if err != nil {
-			return nil, err
-		}
-		b = byteBuffer[0]
-
-		if b == EndMarker {
-			// End marker found, break loop
-			break
-		} else if b == EscapeChar {
-			// Handle escape sequences
-			byteBuffer = make([]byte, 1)
-			_, err = d.port.Read(byteBuffer)
-			if err != nil {
-				return nil, err
-			}
-			tag := byteBuffer[0]
-			switch tag {
-			case 0x01:
-				unstuffed = append(unstuffed, StartMarker)
-			case 0x02:
-				unstuffed = append(unstuffed, EndMarker)
-			case 0x03:
-				unstuffed = append(unstuffed, EscapeChar)
-			default:
-				return nil, fmt.Errorf("error invalid escape sequence")
-			}
-		} else {
-			unstuffed = append(unstuffed, b)
-		}
-	}
-
-	return unstuffed, nil
+	return nil
 }
 
 // createFrameBytes constructs the byte sequence for a CAN bus frame with byte stuffing.
 func (d *ArduinoDriver) createFrameBytes(frame canbus.Frame) []byte {
 	frameBytes := []byte{StartMarker}
 
-	// Byte stuffing helper function
-	stuffByte := func(b byte) {
-		switch b {
-		case StartMarker:
-			frameBytes = append(frameBytes, EscapeChar, 0x01)
-		case EndMarker:
-			frameBytes = append(frameBytes, EscapeChar, 0x02)
-		case EscapeChar:
-			frameBytes = append(frameBytes, EscapeChar, 0x03)
-		default:
-			frameBytes = append(frameBytes, b)
-		}
+	for _, b := range d.frameToBytes(frame) {
+		d.stuffByte(b, &frameBytes)
 	}
-
-	// CAN ID (2 bytes)
-	idHigh := byte((frame.ID >> 8) & 0xFF)
-	idLow := byte(frame.ID & 0xFF)
-	stuffByte(idHigh)
-	stuffByte(idLow)
-
-	// DLC
-	stuffByte(frame.DLC)
-
-	// Data (only up to DLC)
-	for i := 0; i < int(frame.DLC); i++ {
-		stuffByte(frame.Data[i])
-	}
-
-	// Calculate and add checksum
-	checksum := calculateCRC8(&frame)
-	stuffByte(checksum)
 
 	// End Marker
 	frameBytes = append(frameBytes, EndMarker)
@@ -321,14 +291,50 @@ func (d *ArduinoDriver) createFrameBytes(frame canbus.Frame) []byte {
 	return frameBytes
 }
 
+// frameToBytes converts the frame to a sequence of bytes.
+func (d *ArduinoDriver) frameToBytes(frame canbus.Frame) []byte {
+	frameBytes := []byte{}
+
+	// CAN ID (2 bytes)
+	idHigh := byte((frame.ID >> 8) & 0xFF)
+	idLow := byte(frame.ID & 0xFF)
+	frameBytes = append(frameBytes, idHigh, idLow)
+
+	// DLC
+	frameBytes = append(frameBytes, frame.DLC)
+
+	// Data (only up to DLC)
+	for i := 0; i < int(frame.DLC); i++ {
+		frameBytes = append(frameBytes, frame.Data[i])
+	}
+
+	// Calculate and add checksum
+	checksum := calculateCRC8(&frame)
+	frameBytes = append(frameBytes, checksum)
+
+	return frameBytes
+}
+
+// stuffByte handles byte stuffing and appends to the output.
+func (d *ArduinoDriver) stuffByte(b byte, output *[]byte) {
+	switch b {
+	case StartMarker:
+		*output = append(*output, EscapeChar, 0x01)
+	case EndMarker:
+		*output = append(*output, EscapeChar, 0x02)
+	case EscapeChar:
+		*output = append(*output, EscapeChar, 0x03)
+	default:
+		*output = append(*output, b)
+	}
+}
+
 // calculateCRC8 computes the CRC-8 checksum for the given data.
 func calculateCRC8(frame *canbus.Frame) byte {
 	crc := byte(0x00)
 	const polynomial = byte(0x07) // CRC-8-CCITT
 
-	// Include ID (2 bytes)
-	idBytes := []byte{byte(frame.ID >> 8), byte(frame.ID & 0xFF)}
-	for _, b := range idBytes {
+	xorShift := func(crc, b byte) byte {
 		crc ^= b
 		for i := 0; i < 8; i++ {
 			if crc&0x80 != 0 {
@@ -337,29 +343,21 @@ func calculateCRC8(frame *canbus.Frame) byte {
 				crc <<= 1
 			}
 		}
+		return crc
+	}
+
+	// Include ID (2 bytes)
+	idBytes := []byte{byte(frame.ID >> 8), byte(frame.ID & 0xFF)}
+	for _, b := range idBytes {
+		crc = xorShift(crc, b)
 	}
 
 	// Include DLC
-	crc ^= frame.DLC
-	for i := 0; i < 8; i++ {
-		if crc&0x80 != 0 {
-			crc = (crc << 1) ^ polynomial
-		} else {
-			crc <<= 1
-		}
-	}
+	crc = xorShift(crc, frame.DLC)
 
 	// Include Data bytes
 	for i := 0; i < int(frame.DLC); i++ {
-		b := frame.Data[i]
-		crc ^= b
-		for j := 0; j < 8; j++ {
-			if crc&0x80 != 0 {
-				crc = (crc << 1) ^ polynomial
-			} else {
-				crc <<= 1
-			}
-		}
+		crc = xorShift(crc, frame.Data[i])
 	}
 
 	return crc
