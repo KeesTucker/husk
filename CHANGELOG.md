@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5](https://github.com/KeesTucker/husk/compare/husk-v1.0.4...husk-v1.0.5) (2024-10-15)
+
+
+### Bug Fixes
+
+* added ack channel to avoid congestion with read channel and a bunch of other small fixes to get it working again. removed tests because they were so out of date I may as well start again. simplified context cancelling and refactored the read loop. capped log at 10000 chars. moved arduino files around. ([4eea11a](https://github.com/KeesTucker/husk/commit/4eea11aafeab68b6a4b9ccb0f1232af39c047731))
+* use channels instead of blocking mutex for serial comms, various util functions added, better naming, de duping of code, better error logging. ([116523a](https://github.com/KeesTucker/husk/commit/116523a569a3dc2c994b9eb4a609f919e03f4e29))
+
 ## [1.0.4](https://github.com/KeesTucker/husk/compare/husk-v1.0.3...husk-v1.0.4) (2024-10-11)
 
 
