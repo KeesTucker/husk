@@ -9,7 +9,7 @@ import (
 func HexStringToBytes(s string) ([]byte, error) {
 	// Ensure the string has an even length
 	if len(s)%2 != 0 {
-		return nil, fmt.Errorf("error hex string has an odd length: %v", s)
+		return nil, fmt.Errorf("error: hex string has an odd length: %v", s)
 	}
 
 	// Pre-allocate the byte slice with the exact size
@@ -19,7 +19,7 @@ func HexStringToBytes(s string) ([]byte, error) {
 	for i := 0; i < len(s); i += 2 {
 		byteVal, err := strconv.ParseUint(s[i:i+2], 16, 8)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing hex byte at position %d: %v", i, err)
+			return nil, fmt.Errorf("error: parsing hex byte at position %d: %v", i, err)
 		}
 		data[i/2] = byte(byteVal) // Place the parsed byte in the correct position
 	}

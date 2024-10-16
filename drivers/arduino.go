@@ -67,7 +67,7 @@ func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriv
 		return nil, err
 	}
 
-	arduinoDriver.l.WriteToLog(fmt.Sprintf("Arduino connected on port %s", portName))
+	arduinoDriver.l.WriteToLog(fmt.Sprintf("arduino connected on port %s", portName))
 
 	// Start read and write loops
 	go arduinoDriver.readLoop()
@@ -102,10 +102,10 @@ func (d *ArduinoDriver) Cleanup() error {
 	if d.port != nil {
 		err := d.port.Close()
 		if err != nil {
-			d.l.WriteToLog(fmt.Sprintf("error closing port: %s", err.Error()))
+			d.l.WriteToLog(fmt.Sprintf("error: closing port: %s", err.Error()))
 			return err
 		}
-		d.l.WriteToLog("Serial port closed successfully")
+		d.l.WriteToLog("serial port closed successfully")
 	}
 	return nil
 }
@@ -120,13 +120,14 @@ func (d *ArduinoDriver) SendCanBusFrame(frame *canbus.Frame) error {
 		// Send frame to the write channel without context.Done() check
 		d.writeChan <- frameBytes
 
-		d.l.WriteToLog(fmt.Sprintf("Sent frame: %v (attempt %d)", frameBytes, retries+1))
+		if retries > 0 {
+			d.l.WriteToLog(fmt.Sprintf("sent frame: %v (attempt %d)", frameBytes, retries+1))
+		}
 
 		// Wait for ACK or NACK
 		select {
 		case ackReceived = <-d.ackChan:
 			if ackReceived {
-				d.l.WriteToLog("ACK received successfully")
 				return nil
 			}
 			d.l.WriteToLog("NACK received from Arduino")
@@ -161,7 +162,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 
 		if len(unstuffedBytes) < 4 {
 			d.writeErrorResponse()
-			return nil, fmt.Errorf("error: incomplete frame received")
+			return nil, fmt.Errorf("error: incomplete frame received (unstuffedBytes < 4)")
 		}
 
 		// CAN ID (2 bytes)
@@ -194,7 +195,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 
 		if calculatedChecksum != receivedChecksum {
 			d.writeErrorResponse()
-			return nil, fmt.Errorf("error: checksum mismatch")
+			return nil, fmt.Errorf("error: checksum mismatch: received %d, calculated %d", receivedChecksum, calculatedChecksum)
 		}
 
 		// Send ACK
@@ -203,7 +204,6 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 			return nil, fmt.Errorf("error: failed to send ACK: %s", err.Error())
 		}
 
-		d.l.WriteToLog(fmt.Sprintf("Frame read successfully: %v", frame))
 		return frame, nil
 
 	case <-d.ctx.Done():
@@ -224,7 +224,7 @@ func (d *ArduinoDriver) readLoop() {
 			byteBuffer := make([]byte, 1)
 			n, err := d.port.Read(byteBuffer)
 			if err != nil && err != io.EOF {
-				d.l.WriteToLog(fmt.Sprintf("error reading from port: %s", err))
+				d.l.WriteToLog(fmt.Sprintf("error: reading from port: %s", err))
 				continue
 			}
 
@@ -260,7 +260,7 @@ func (d *ArduinoDriver) readLoop() {
 				// Handle byte stuffing
 				n, err := d.port.Read(byteBuffer)
 				if err != nil && err != io.EOF {
-					d.l.WriteToLog(fmt.Sprintf("error reading from port after escape character: %s", err))
+					d.l.WriteToLog(fmt.Sprintf("error: reading from port after escape character: %s", err))
 					continue
 				}
 				if n > 0 {
@@ -297,7 +297,7 @@ func (d *ArduinoDriver) writeLoop() {
 		case frameBytes := <-d.writeChan:
 			_, err := d.port.Write(frameBytes)
 			if err != nil {
-				d.l.WriteToLog(fmt.Sprintf("error writing to port: %s", err))
+				d.l.WriteToLog(fmt.Sprintf("error: writing to port: %s", err))
 			}
 		}
 	}
@@ -307,14 +307,13 @@ func (d *ArduinoDriver) writeLoop() {
 func (d *ArduinoDriver) writeErrorResponse() {
 	err := d.sendResponse(NACK)
 	if err != nil {
-		d.l.WriteToLog(fmt.Sprintf("error while trying to send NACK: %s", err.Error()))
+		d.l.WriteToLog(fmt.Sprintf("error: while trying to send NACK: %s", err.Error()))
 	}
 }
 
 // sendResponse sends a response (ACK/NACK) to the Arduino.
 func (d *ArduinoDriver) sendResponse(response byte) error {
 	d.writeChan <- []byte{response}
-	d.l.WriteToLog(fmt.Sprintf("Sent ACK %v", ackByteToBool(response)))
 	return nil
 }
 
