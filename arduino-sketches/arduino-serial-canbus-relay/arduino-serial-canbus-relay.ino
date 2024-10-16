@@ -7,8 +7,11 @@ const byte ESCAPE_CHAR = 0x1B;
 const byte ACK = 0x06;
 const byte NACK = 0x15;
 
-struct can_frame readFrame;
-struct can_frame writeFrame;
+// MCP2515 CAN controller
+MCP2515 mcp2515(9);  // CS pin 9
+
+struct can_frame rxFrame;
+struct can_frame txFrame;
 
 const int MAX_RETRIES = 3; // Maximum number of retries
 const unsigned long READ_TIMEOUT_MS = 5; // Timeout for waiting on Serial
@@ -19,15 +22,25 @@ void setup() {
     Serial.begin(921600);
 }
 
-
 void loop() {
-    // 1. Check for incoming CAN frames
-    if (Serial.available() > 0) {
-        readCanBusFrame(readFrame);
-        readFrame.can_id = 0x7E8;
-        sendCanBusFrame(readFrame);
+    if (mcp2515.readMessage(&rxFrame) == MCP2515::ERROR_OK) {
+      sendSerialCanBusFrame(rxFrame);
+    }
+
+    // Check for incoming CAN frames, read them
+    if (Serial.available() > 0 && readSerialCanBusFrame(txFrame)) {
+      // If we have an incoming frame relay it to the ECU
+      if (mcp2515.sendMessage(&txFrame) == MCP2515::ERROR_OK) {
+        // We managed to send the frame! ACK the serial read.
+        Serial.write(ACK);
+        return;
+      }
+      // We failed to send the frame! NACK the serial read.
+      Serial.write(NACK);
     }
 }
+
+// SERIAL PROTOCOL ------------------------------------------------------------------------------------------
 
 bool readByteWithTimeout(byte &result, unsigned long timeoutMs = READ_TIMEOUT_MS) {
     unsigned long startTime = millis();
@@ -40,7 +53,7 @@ bool readByteWithTimeout(byte &result, unsigned long timeoutMs = READ_TIMEOUT_MS
     return false; // Timed out
 }
 
-bool readCanBusFrame(struct can_frame &frame) {
+bool readSerialCanBusFrame(struct can_frame &frame) {
     // Wait for the start marker
     byte startByte;
     if (!readByteWithTimeout(startByte) || startByte != START_MARKER) {
@@ -124,9 +137,6 @@ bool readCanBusFrame(struct can_frame &frame) {
         return false;
     }
 
-    // Send ACK
-    Serial.write(ACK);
-
     return true;
 }
 
@@ -149,7 +159,7 @@ void stuffByte(byte b) {
     }
 }
 
-void sendCanBusFrame(struct can_frame &frame) {
+void sendSerialCanBusFrame(struct can_frame &frame) {
     int retries = 0;
     bool ackReceived = false;
 
@@ -246,3 +256,6 @@ byte xorShift(byte crc, byte b) {
     }
     return crc;
 }
+
+// MCP2515 CANBUS ------------------------------------------------------------------------------------------
+

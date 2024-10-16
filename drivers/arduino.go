@@ -19,6 +19,8 @@ const (
 	ACK                      = 0x06
 	NACK                     = 0x15
 	MaxRetries               = 3
+	PortScanDelay            = 100 * time.Millisecond
+	PortOpenDelay            = 1000 * time.Millisecond
 	ReadTimeout              = 5 * time.Millisecond
 	ACKTimeout               = 100 * time.Millisecond
 	RetryDelay               = 100 * time.Millisecond
@@ -50,10 +52,13 @@ func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriv
 	}
 
 	// Find Arduino port
-	portName, err := findArduinoPortName()
+	portName, err := findArduinoPort(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	// Give port time to init if arduino has just been plugged in.
+	time.Sleep(PortOpenDelay)
 
 	// Open serial port
 	mode := &serial.Mode{BaudRate: BaudRate}
@@ -76,24 +81,31 @@ func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriv
 	return arduinoDriver, nil
 }
 
-// findArduinoPortName scans serial ports to find the Arduino.
-func findArduinoPortName() (string, error) {
-	ports, err := enumerator.GetDetailedPortsList()
-	if err != nil {
-		return "", err
-	}
-
-	// Find the first matching USB port
-	for _, port := range ports {
-		if port.IsUSB {
-			// VID 2341 for Arduino, 1A86 for CH340, 2A03 for Arduino clone
-			if port.VID == "2341" || port.VID == "1A86" || port.VID == "2A03" {
-				return port.Name, nil
+// findArduinoPort scans serial ports to find the Arduino, blocks until arduino is found or context is cancelled.
+func findArduinoPort(ctx context.Context) (string, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("error: no Arduino found on the USB ports")
+		default:
+			ports, err := enumerator.GetDetailedPortsList()
+			if err != nil {
+				return "", err
 			}
+
+			// Find the first matching USB port
+			for _, port := range ports {
+				if port.IsUSB {
+					// VID 2341 for Arduino, 1A86 for CH340, 2A03 for Arduino clone
+					if port.VID == "2341" || port.VID == "1A86" || port.VID == "2A03" {
+						return port.Name, nil
+					}
+				}
+			}
+
+			time.Sleep(PortScanDelay)
 		}
 	}
-
-	return "", fmt.Errorf("error: no Arduino found on the USB ports")
 }
 
 // Cleanup closes the serial port and stops the read and write loops.
