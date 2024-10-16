@@ -36,7 +36,7 @@ jobs:
 
       - name: Rename Windows Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: mv ./fyne-cross/bin/windows-amd64/husk.exe ./fyne-cross/bin/linux-amd64/husk-windows-amd64.exe
+        run: mv ./fyne-cross/bin/windows-amd64/husk.exe ./fyne-cross/bin/windows-amd64/husk-windows-amd64.exe
 
       - name: Rename Linux Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
