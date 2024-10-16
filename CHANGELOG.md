@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.10](https://github.com/KeesTucker/husk/compare/husk-v1.0.9...husk-v1.0.10) (2024-10-16)
+
+
+### Bug Fixes
+
+* rename build artifacts ([4515d83](https://github.com/KeesTucker/husk/commit/4515d83042921aba6115f83b37c32396bbbe44ff))
+* rename build artifacts ([9f27956](https://github.com/KeesTucker/husk/commit/9f27956099c9d9b7f1eabea0c578503203f14400))
+
 ## [1.0.9](https://github.com/KeesTucker/husk/compare/husk-v1.0.8...husk-v1.0.9) (2024-10-16)
 
 
