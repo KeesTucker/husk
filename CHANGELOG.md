@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.12](https://github.com/KeesTucker/husk/compare/husk-v1.0.11...husk-v1.0.12) (2024-10-16)
+
+
+### Bug Fixes
+
+* massive performance improvements. non blocking logging. ([95df491](https://github.com/KeesTucker/husk/commit/95df4918a5cbaf9a840a01ae063eba5974196809))
+* removed frame pair per second logging. reached 255fpps. streamlined logging. ([f1d3f4d](https://github.com/KeesTucker/husk/commit/f1d3f4d683be480f7602a6e0deee37ddac7f9e4d))
+
 ## [1.0.11](https://github.com/KeesTucker/husk/compare/husk-v1.0.10...husk-v1.0.11) (2024-10-16)
 
 
