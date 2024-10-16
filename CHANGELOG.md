@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.9](https://github.com/KeesTucker/husk/compare/husk-v1.0.8...husk-v1.0.9) (2024-10-16)
+
+
+### Bug Fixes
+
+* debug build file paths ([62ec30e](https://github.com/KeesTucker/husk/commit/62ec30ea272af51fd9db7cb20aa10dedbac7dbb6))
+
 ## [1.0.8](https://github.com/KeesTucker/husk/compare/husk-v1.0.7...husk-v1.0.8) (2024-10-15)
 
 
