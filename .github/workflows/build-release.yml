@@ -28,11 +28,19 @@ jobs:
 
       - name: Cross-Compile for Windows
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross windows --app-id com.keestucker.husk --output husk-windows-amd64
+        run: fyne-cross windows --app-id com.keestucker.husk
 
       - name: Cross-Compile for Linux
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
-        run: fyne-cross linux --app-id com.keestucker.husk --output husk-linux-amd64
+        run: fyne-cross linux --app-id com.keestucker.husk
+
+      - name: Rename Windows Build
+        if: ${{ steps.release_please.outputs.release_created == 'true' }}
+        run: mv ./fyne-cross/bin/windows-amd64/husk.exe ./fyne-cross/bin/linux-amd64/husk-windows-amd64.exe
+
+      - name: Rename Linux Build
+        if: ${{ steps.release_please.outputs.release_created == 'true' }}
+        run: mv ./fyne-cross/bin/linux-amd64/husk ./fyne-cross/bin/linux-amd64/husk-linux-amd64
 
       - name: Upload Windows amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
