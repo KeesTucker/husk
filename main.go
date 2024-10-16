@@ -29,37 +29,8 @@ func main() {
 	// Initialise the logger
 	l := logging.NewLogger(ctx, g)
 
-	// findArduinoAndRun is blocking until an arduino is found so run it in a goroutine
-	var d *drivers.ArduinoDriver
-	go func() {
-		d = findArduinoAndRun(ctx, g, l)
-	}()
-
-	// Start a separate goroutine to listen for OS signals to handle shutdown gracefully
-	go func() {
-		<-signalChan
-		l.WriteToLog("received shutdown signal, canceling context and cleaning up...")
-		cancel()
-	}()
-
-	// Run the GUI application (this will block)
-	g.RunApp()
-
-	// Ensure cleanup of resources
-	if err := d.Cleanup(); err != nil {
-		l.WriteToLog(fmt.Sprintf("error: during driver cleanup: %s", err.Error()))
-	}
-}
-
-func findArduinoAndRun(ctx context.Context, g *gui.GUI, l *logging.Logger) *drivers.ArduinoDriver {
 	// Initialize the Arduino driver with the context
-	d, err := drivers.NewArduinoDriver(ctx, l)
-	if err != nil {
-		l.WriteToLog(fmt.Sprintf("error: initializing Arduino driver: %s", err))
-		return nil
-	}
-
-	l.WriteToLog("arduino driver initialized")
+	d := drivers.NewArduinoDriver(ctx, l)
 
 	// Set up callback to send frames from GUI to Arduino driver
 	g.SetSendManualCanBusFrameCallback(func(message string) {
@@ -113,5 +84,18 @@ func findArduinoAndRun(ctx context.Context, g *gui.GUI, l *logging.Logger) *driv
 		}
 	}()
 
-	return d
+	// Start a separate goroutine to listen for OS signals to handle shutdown gracefully
+	go func() {
+		<-signalChan
+		l.WriteToLog("received shutdown signal, canceling context and cleaning up...")
+		cancel()
+	}()
+
+	// Run the GUI application (this will block)
+	g.RunApp()
+
+	// Ensure cleanup of resources
+	if err := d.Cleanup(); err != nil {
+		l.WriteToLog(fmt.Sprintf("error: during driver cleanup: %s", err.Error()))
+	}
 }

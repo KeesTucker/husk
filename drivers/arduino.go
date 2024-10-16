@@ -30,6 +30,7 @@ const (
 // ArduinoDriver handles serial communication with an Arduino device.
 type ArduinoDriver struct {
 	ctx       context.Context
+	isRunning bool
 	l         *logging.Logger
 	port      serial.Port
 	readChan  chan []byte
@@ -39,7 +40,7 @@ type ArduinoDriver struct {
 }
 
 // NewArduinoDriver initializes and returns a new ArduinoDriver.
-func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriver, error) {
+func NewArduinoDriver(ctx context.Context, logger *logging.Logger) *ArduinoDriver {
 	ctx, cancel := context.WithCancel(ctx)
 
 	arduinoDriver := &ArduinoDriver{
@@ -52,33 +53,39 @@ func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriv
 	}
 
 	// Find Arduino port
-	portName, err := findArduinoPort(ctx)
-	if err != nil {
-		return nil, err
-	}
+	go func() {
+		portName, err := findArduinoPort(ctx)
+		if err != nil {
+			logger.WriteToLog(fmt.Sprintf("error: finding Arduino port: %s", err.Error()))
+		}
 
-	// Give port time to init if arduino has just been plugged in.
-	time.Sleep(PortOpenDelay)
+		// Give port time to init if arduino has just been plugged in.
+		time.Sleep(PortOpenDelay)
 
-	// Open serial port
-	mode := &serial.Mode{BaudRate: BaudRate}
-	arduinoDriver.port, err = serial.Open(portName, mode)
-	if err != nil {
-		return nil, err
-	}
-	// Set read timeout
-	err = arduinoDriver.port.SetReadTimeout(ReadTimeout)
-	if err != nil {
-		return nil, err
-	}
+		// Open serial port
+		mode := &serial.Mode{BaudRate: BaudRate}
+		arduinoDriver.port, err = serial.Open(portName, mode)
+		if err != nil {
+			logger.WriteToLog(fmt.Sprintf("error: opening port: %s", err.Error()))
+		}
+		// Set read timeout
+		err = arduinoDriver.port.SetReadTimeout(ReadTimeout)
+		if err != nil {
+			logger.WriteToLog(fmt.Sprintf("error: setting read timeout: %s", err.Error()))
+		}
 
-	arduinoDriver.l.WriteToLog(fmt.Sprintf("arduino connected on port %s", portName))
+		logger.WriteToLog(fmt.Sprintf("arduino connected on port %s", portName))
 
-	// Start read and write loops
-	go arduinoDriver.readLoop()
-	go arduinoDriver.writeLoop()
+		// Start read and write loops
+		go arduinoDriver.readLoop()
+		go arduinoDriver.writeLoop()
 
-	return arduinoDriver, nil
+		arduinoDriver.isRunning = true
+
+		logger.WriteToLog("arduino driver initialized")
+	}()
+
+	return arduinoDriver
 }
 
 // findArduinoPort scans serial ports to find the Arduino, blocks until arduino is found or context is cancelled.
@@ -124,6 +131,10 @@ func (d *ArduinoDriver) Cleanup() error {
 
 // SendCanBusFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
 func (d *ArduinoDriver) SendCanBusFrame(frame *canbus.Frame) error {
+	if !d.isRunning {
+		return nil
+	}
+
 	frameBytes := d.createFrameBytes(frame)
 	ackReceived := false
 	retryDelay := RetryDelay
