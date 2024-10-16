@@ -12,7 +12,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
+
+var startTime int64
+var count int64
 
 func main() {
 	// Create a context that can be canceled
@@ -24,7 +28,7 @@ func main() {
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 	// Initialize the GUI
-	g := new(gui.GUI)
+	g := gui.NewGUI()
 
 	// Initialise the logger
 	l := logging.NewLogger(g)
@@ -52,11 +56,14 @@ func main() {
 			return
 		}
 
-		frame := canbus.Frame{
+		frame := &canbus.Frame{
 			ID:  canbus.CanIDTester,
 			DLC: dlc,
 		}
 		copy(frame.Data[:], data)
+
+		startTime = time.Now().Unix()
+		count = 1
 
 		// Send the frame to the Arduino driver
 		if err = d.SendCanBusFrame(frame); err != nil {
@@ -85,6 +92,11 @@ func main() {
 				if frame != nil {
 					// Call the provided frame callback with the received frame
 					g.OnCanBusFrameReceive(frame)
+					frame.ID = canbus.CanIDTester
+					count++
+					if err = d.SendCanBusFrame(frame); err != nil {
+						l.WriteToLog(fmt.Sprintf("error sending CAN bus frame: %s", err.Error()))
+					}
 				}
 			}
 		}
@@ -98,7 +110,9 @@ func main() {
 	}()
 
 	// Run the GUI application (this will block, but frame reading runs in parallel)
-	g.RunApp()
+	g.RunApp(ctx)
+
+	fmt.Printf("frame pairs per sec: %v", float64(count)/float64(time.Now().Unix()-startTime))
 
 	// Ensure cleanup of resources
 	if err = d.Cleanup(); err != nil {

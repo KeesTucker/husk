@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	BaudRate                 = 115200
+	BaudRate                 = 921600
 	StartMarker              = 0x7E
 	EndMarker                = 0x7F
 	EscapeChar               = 0x1B
 	ACK                      = 0x06
 	NACK                     = 0x15
 	MaxRetries               = 3
-	ReadTimeout              = 10 * time.Millisecond
+	ReadTimeout              = 5 * time.Millisecond
 	ACKTimeout               = 100 * time.Millisecond
 	RetryDelay               = 100 * time.Millisecond
 	ExponentialBackoffFactor = 2
@@ -43,9 +43,9 @@ func NewArduinoDriver(ctx context.Context, logger *logging.Logger) (*ArduinoDriv
 	arduinoDriver := &ArduinoDriver{
 		ctx:       ctx,
 		l:         logger,
-		readChan:  make(chan []byte, 10),
-		writeChan: make(chan []byte, 10),
-		ackChan:   make(chan bool, 10),
+		readChan:  make(chan []byte, 32),
+		writeChan: make(chan []byte, 32),
+		ackChan:   make(chan bool, 32),
 		cancel:    cancel,
 	}
 
@@ -111,7 +111,7 @@ func (d *ArduinoDriver) Cleanup() error {
 }
 
 // SendCanBusFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
-func (d *ArduinoDriver) SendCanBusFrame(frame canbus.Frame) error {
+func (d *ArduinoDriver) SendCanBusFrame(frame *canbus.Frame) error {
 	frameBytes := d.createFrameBytes(frame)
 	ackReceived := false
 	retryDelay := RetryDelay
@@ -319,7 +319,7 @@ func (d *ArduinoDriver) sendResponse(response byte) error {
 }
 
 // createFrameBytes constructs the byte sequence for a CAN bus frame with byte stuffing.
-func (d *ArduinoDriver) createFrameBytes(frame canbus.Frame) []byte {
+func (d *ArduinoDriver) createFrameBytes(frame *canbus.Frame) []byte {
 	frameBytes := []byte{StartMarker}
 
 	for _, b := range d.frameToBytes(frame) {
@@ -333,8 +333,8 @@ func (d *ArduinoDriver) createFrameBytes(frame canbus.Frame) []byte {
 }
 
 // frameToBytes converts the frame to a sequence of bytes.
-func (d *ArduinoDriver) frameToBytes(frame canbus.Frame) []byte {
-	frameBytes := []byte{}
+func (d *ArduinoDriver) frameToBytes(frame *canbus.Frame) []byte {
+	var frameBytes []byte
 
 	// CAN ID (2 bytes)
 	idHigh := byte((frame.ID >> 8) & 0xFF)
@@ -350,7 +350,7 @@ func (d *ArduinoDriver) frameToBytes(frame canbus.Frame) []byte {
 	}
 
 	// Calculate and add checksum
-	checksum := calculateCRC8(&frame)
+	checksum := calculateCRC8(frame)
 	frameBytes = append(frameBytes, checksum)
 
 	return frameBytes

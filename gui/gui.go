@@ -1,19 +1,24 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"husk/canbus"
+	"time"
 )
 
 const (
 	windowName                        = "husk"
 	manualCanBusFrameEntryPlaceholder = "enter can bus message here"
-	maxLogCharsLen                    = 10000
+	maxLogCharsLen                    = 8192
+	logRefreshRate                    = 64
 )
+
+var logRefreshDelay = time.Duration((1.0 / logRefreshRate) * float64(time.Second))
 
 type GUI struct {
 	app    fyne.App
@@ -29,18 +34,23 @@ type GUI struct {
 
 	// callbacks
 	sendManualCanBusFrameCallback func(string)
+
+	incomingLog string
 }
 
-func (g *GUI) RunApp() {
-	g.app = app.New()
+func NewGUI() *GUI {
+	return &GUI{
+		app:        app.New(),
+		autoScroll: true,
+		logLabel:   widget.NewLabel(""),
+	}
+}
+
+func (g *GUI) RunApp(ctx context.Context) {
 	g.window = g.app.NewWindow(windowName)
-
-	g.logLabel = widget.NewLabel("")
 	g.logLabel.Wrapping = fyne.TextWrapWord
-
 	g.logScrollContainer = container.NewVScroll(g.logLabel)
 	g.logScrollContainer.SetMinSize(fyne.NewSize(400, 300))
-	g.autoScroll = true
 
 	// Turn off auto scroll when user scrolls up.
 	g.logScrollContainer.OnScrolled = func(offset fyne.Position) {
@@ -76,7 +86,46 @@ func (g *GUI) RunApp() {
 
 	g.isRunning = true
 
+	go g.logLoop(ctx)
+
 	g.window.ShowAndRun()
+}
+
+func (g *GUI) logLoop(ctx context.Context) {
+	for {
+		if !g.isRunning {
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(logRefreshDelay)
+
+			// Combine existing log text with the new text
+			newLabelText := fmt.Sprintf("%s%s", g.logLabel.Text, g.incomingLog)
+			g.incomingLog = ""
+
+			// Convert to runes to handle multi-byte characters properly
+			runes := []rune(newLabelText)
+
+			// Check if the combined text exceeds 1000 characters
+			if len(runes) > maxLogCharsLen {
+				// Trim the oldest characters to maintain a 1000-character limit
+				runes = runes[len(runes)-maxLogCharsLen:]
+				newLabelText = string(runes)
+			}
+
+			// Update the label text with the capped log
+			g.logLabel.SetText(newLabelText)
+
+			// Auto-scroll if enabled
+			if g.autoScroll {
+				g.logScrollContainer.ScrollToBottom()
+			}
+		}
+	}
 }
 
 // SetSendManualCanBusFrameCallback allows setting the callback for sending manual CAN bus frames.
@@ -94,30 +143,6 @@ func (g *GUI) OnCanBusFrameReceive(frame *canbus.Frame) {
 	g.WriteToLog(frame.String())
 }
 
-// WriteToLog writes the gui log
-func (g *GUI) WriteToLog(newText string) {
-	if !g.isRunning {
-		return
-	}
-
-	// Combine existing log text with the new text
-	combinedText := fmt.Sprintf("%s%s\n", g.logLabel.Text, newText)
-
-	// Convert to runes to handle multi-byte characters properly
-	runes := []rune(combinedText)
-
-	// Check if the combined text exceeds 1000 characters
-	if len(runes) > maxLogCharsLen {
-		// Trim the oldest characters to maintain a 1000-character limit
-		runes = runes[len(runes)-maxLogCharsLen:]
-		combinedText = string(runes)
-	}
-
-	// Update the label text with the capped log
-	g.logLabel.SetText(combinedText)
-
-	// Auto-scroll if enabled
-	if g.autoScroll {
-		g.logScrollContainer.ScrollToBottom()
-	}
+func (g *GUI) WriteToLog(newLine string) {
+	g.incomingLog += newLine + "\n"
 }

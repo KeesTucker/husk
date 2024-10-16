@@ -11,17 +11,12 @@ struct can_frame readFrame;
 struct can_frame writeFrame;
 
 const int MAX_RETRIES = 3; // Maximum number of retries
-const unsigned long READ_TIMEOUT_MS = 10; // Timeout for waiting on Serial
+const unsigned long READ_TIMEOUT_MS = 5; // Timeout for waiting on Serial
 const unsigned long ACK_TIMEOUT_MS = 100; // Timeout for waiting for ACK/NACK
 const unsigned long RETRY_DELAY_MS = 100; // Timeout for waiting for ACK/NACK
 
-// Testing vars
-const unsigned long sendInterval = 100;
-unsigned long lastSendTime = 0;
-uint8_t counter = 0;
-
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(921600);
 }
 
 
@@ -29,24 +24,8 @@ void loop() {
     // 1. Check for incoming CAN frames
     if (Serial.available() > 0) {
         readCanBusFrame(readFrame);
-    }
-
-    // 2. Check if it's time to send a CAN frame
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastSendTime >= sendInterval) {
-        // Prepare the CAN frame
-        writeFrame.can_id = 0x7E8;      // Example CAN ID
-        writeFrame.can_dlc = 1;         // Data length code
-        writeFrame.data[0] = counter;    // Example data payload
-
-        // Send the CAN frame
-        sendCanBusFrame(writeFrame);
-
-        // Increment the counter
-        counter++;
-
-        // Update the last send time
-        lastSendTime = currentMillis;
+        readFrame.can_id = 0x7E8;
+        sendCanBusFrame(readFrame);
     }
 }
 
