@@ -34,6 +34,10 @@ jobs:
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
         run: fyne-cross linux --app-id com.keestucker.husk --output husk-linux-amd64
 
+      - name: Debug File Paths
+        if: ${{ steps.release_please.outputs.release_created == 'true' }}
+        run: ls -R ./fyne-cross/bin/
+
       - name: Upload Windows amd64 Build
         if: ${{ steps.release_please.outputs.release_created == 'true' }}
         env:
