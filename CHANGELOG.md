@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/KeesTucker/husk/compare/husk-v1.0.12...husk-v1.1.0) (2024-10-16)
+
+
+### Features
+
+* Added actual ECU communication to arduino sketch and made the program look for an arduino until one is plugged in on startup instead of crashing. ([fa1b307](https://github.com/KeesTucker/husk/commit/fa1b30755b662dbce563add4827ecaef2244fdcf))
+
 ## [1.0.12](https://github.com/KeesTucker/husk/compare/husk-v1.0.11...husk-v1.0.12) (2024-10-16)
 
 
