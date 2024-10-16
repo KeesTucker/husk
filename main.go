@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"husk/canbus"
 	"husk/drivers"
+	"husk/frames"
 	"husk/gui"
 	"husk/logging"
+	"husk/processors"
 	"husk/utils"
 	"os"
 	"os/signal"
@@ -23,14 +24,10 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
-	// Initialize the GUI
 	g := gui.NewGUI()
-
-	// Initialise the logger
 	l := logging.NewLogger(ctx, g)
-
-	// Initialize the Arduino driver with the context
 	d := drivers.NewArduinoDriver(ctx, l)
+	e := processors.NewHusqvarnaKTMProcessor(ctx, d, l)
 
 	// Set up callback to send frames from GUI to Arduino driver
 	g.SetSendManualCanBusFrameCallback(func(message string) {
@@ -47,8 +44,8 @@ func main() {
 			return
 		}
 
-		frame := &canbus.Frame{
-			ID:  canbus.CanIDTester,
+		frame := &frames.Frame{
+			ID:  processors.CanIDTester,
 			DLC: dlc,
 		}
 		copy(frame.Data[:], data)
@@ -79,6 +76,7 @@ func main() {
 				}
 				if frame != nil {
 					l.WriteToLog(fmt.Sprintf("RECIEVED: %s", frame.String()))
+					e.ProcessFrame(frame)
 				}
 			}
 		}

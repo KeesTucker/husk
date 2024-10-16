@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
-	"husk/canbus"
+	"husk/frames"
 	"husk/logging"
 	"io"
 	"time"
@@ -40,7 +40,7 @@ type ArduinoDriver struct {
 }
 
 // NewArduinoDriver initializes and returns a new ArduinoDriver.
-func NewArduinoDriver(ctx context.Context, logger *logging.Logger) *ArduinoDriver {
+func NewArduinoDriver(ctx context.Context, logger *logging.Logger) Driver {
 	ctx, cancel := context.WithCancel(ctx)
 
 	arduinoDriver := &ArduinoDriver{
@@ -130,7 +130,7 @@ func (d *ArduinoDriver) Cleanup() error {
 }
 
 // SendCanBusFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
-func (d *ArduinoDriver) SendCanBusFrame(frame *canbus.Frame) error {
+func (d *ArduinoDriver) SendCanBusFrame(frame *frames.Frame) error {
 	if !d.isRunning {
 		return nil
 	}
@@ -176,7 +176,7 @@ func (d *ArduinoDriver) SendCanBusFrame(frame *canbus.Frame) error {
 }
 
 // ReadCanBusFrame retrieves a received CAN bus frame from the read channel.
-func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
+func (d *ArduinoDriver) ReadCanBusFrame() (*frames.Frame, error) {
 	select {
 	case unstuffedBytes := <-d.readChan:
 		if unstuffedBytes == nil {
@@ -206,7 +206,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*canbus.Frame, error) {
 		var dataBuffer [8]uint8
 		copy(dataBuffer[:], unstuffedBytes[3:3+dlc])
 
-		frame := &canbus.Frame{
+		frame := &frames.Frame{
 			ID:  id,
 			DLC: dlc,
 		}
@@ -341,7 +341,7 @@ func (d *ArduinoDriver) sendResponse(response byte) error {
 }
 
 // createFrameBytes constructs the byte sequence for a CAN bus frame with byte stuffing.
-func (d *ArduinoDriver) createFrameBytes(frame *canbus.Frame) []byte {
+func (d *ArduinoDriver) createFrameBytes(frame *frames.Frame) []byte {
 	frameBytes := []byte{StartMarker}
 
 	for _, b := range d.frameToBytes(frame) {
@@ -355,7 +355,7 @@ func (d *ArduinoDriver) createFrameBytes(frame *canbus.Frame) []byte {
 }
 
 // frameToBytes converts the frame to a sequence of bytes.
-func (d *ArduinoDriver) frameToBytes(frame *canbus.Frame) []byte {
+func (d *ArduinoDriver) frameToBytes(frame *frames.Frame) []byte {
 	var frameBytes []byte
 
 	// CAN ID (2 bytes)
@@ -407,7 +407,7 @@ func (d *ArduinoDriver) unstuffByte(b byte) (byte, error) {
 }
 
 // calculateCRC8 computes the CRC-8 checksum for the given data.
-func calculateCRC8(frame *canbus.Frame) byte {
+func calculateCRC8(frame *frames.Frame) byte {
 	crc := byte(0x00)
 	const polynomial = byte(0x07) // CRC-8-CCITT
 

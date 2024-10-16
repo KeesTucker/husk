@@ -1,14 +1,11 @@
 package drivers
 
 import (
-	"husk/canbus"
+	"husk/frames"
 )
 
 type Driver interface {
-	SendCanBusFrame(frame canbus.Frame) error
-	ReadCanBusFrame() (*canbus.Frame, error)
+	SendCanBusFrame(frame *frames.Frame) error
+	ReadCanBusFrame() (*frames.Frame, error)
 	Cleanup() error
 }
-
-type ReadFrameCallback func(*canbus.Frame)
-type ErrorCallback func(error)

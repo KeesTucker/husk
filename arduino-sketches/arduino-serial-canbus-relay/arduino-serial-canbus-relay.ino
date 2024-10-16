@@ -23,6 +23,7 @@ void setup() {
 }
 
 void loop() {
+    // TODO: this may be blocking
     if (mcp2515.readMessage(&rxFrame) == MCP2515::ERROR_OK) {
       sendSerialCanBusFrame(rxFrame);
     }
