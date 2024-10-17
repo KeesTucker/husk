@@ -3,12 +3,13 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"io"
+	"time"
+
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"husk/frames"
 	"husk/logging"
-	"io"
-	"time"
 )
 
 const (

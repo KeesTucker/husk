@@ -3,8 +3,9 @@ package logging
 import (
 	"context"
 	"fmt"
-	"husk/gui"
 	"time"
+
+	"husk/gui"
 )
 
 type Logger struct {

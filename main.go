@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"husk/drivers"
 	"husk/frames"
 	"husk/gui"
 	"husk/logging"
 	"husk/processors"
 	"husk/utils"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 func main() {

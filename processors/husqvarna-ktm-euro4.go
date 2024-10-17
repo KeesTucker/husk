@@ -3,10 +3,11 @@ package processors
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"husk/drivers"
 	"husk/frames"
 	"husk/logging"
-	"time"
 )
 
 type HusqvarnaKTMProcessor struct {
