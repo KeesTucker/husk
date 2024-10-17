@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/KeesTucker/husk/compare/husk-v1.3.0...husk-v1.4.0) (2024-10-17)
+
+
+### Features
+
+* added buttons to connect to arduino and ecu. still needs nil checks now that everything isn't immediately initialized. ([2b729fb](https://github.com/KeesTucker/husk/commit/2b729fb7c0959a885dac6ea98759df96776b044d))
+
 ## [1.3.0](https://github.com/KeesTucker/husk/compare/husk-v1.2.0...husk-v1.3.0) (2024-10-17)
 
 
