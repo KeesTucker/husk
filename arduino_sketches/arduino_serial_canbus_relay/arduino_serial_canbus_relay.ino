@@ -23,7 +23,6 @@ void setup() {
 }
 
 void loop() {
-    // TODO: this may be blocking
     if (mcp2515.readMessage(&rxFrame) == MCP2515::ERROR_OK) {
       sendSerialCanBusFrame(rxFrame);
     }
@@ -40,8 +39,6 @@ void loop() {
       Serial.write(NACK);
     }
 }
-
-// SERIAL PROTOCOL ------------------------------------------------------------------------------------------
 
 bool readByteWithTimeout(byte &result, unsigned long timeoutMs = READ_TIMEOUT_MS) {
     unsigned long startTime = millis();
@@ -257,6 +254,4 @@ byte xorShift(byte crc, byte b) {
     }
     return crc;
 }
-
-// MCP2515 CANBUS ------------------------------------------------------------------------------------------
 

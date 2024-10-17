@@ -1,16 +1,22 @@
 package gui
 
 import (
+	"context"
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"husk/ecus"
+	"husk/protocols"
+	"husk/services"
 )
 
 const (
-	windowName                        = "husk"
-	manualCanBusFrameEntryPlaceholder = "enter can bus message here"
-	maxLogCharsLen                    = 8192
+	windowName                  = "husk"
+	manualFrameEntryPlaceholder = "enter can bus message here"
+	maxLogCharsLen              = 8192
 )
 
 type GUI struct {
@@ -24,16 +30,16 @@ type GUI struct {
 	// UI elements
 	logScrollContainer *container.Scroll
 	logLabel           *widget.Label
-
-	// callbacks
-	sendManualCanBusFrameCallback func(string)
+	manualFrameEntry   *widget.Entry
 }
 
-func NewGUI() *GUI {
-	return &GUI{}
+func RegisterGUI() *GUI {
+	g := &GUI{}
+	defer services.Register(services.ServiceGUI, g)
+	return g
 }
 
-func (g *GUI) RunApp() {
+func (g *GUI) Start(ctx context.Context) *GUI {
 	g.autoScroll = true
 	g.app = app.New()
 	g.logLabel = widget.NewLabel("")
@@ -50,21 +56,16 @@ func (g *GUI) RunApp() {
 		}
 	}
 
-	manualCanBusFrameEntry := widget.NewEntry()
-	manualCanBusFrameEntry.SetPlaceHolder(manualCanBusFrameEntryPlaceholder)
+	g.manualFrameEntry = widget.NewEntry()
+	g.manualFrameEntry.SetPlaceHolder(manualFrameEntryPlaceholder)
 
-	sendManualCanBusFrameButton := widget.NewButton("Send CAN", func() {
-		if g.sendManualCanBusFrameCallback != nil && manualCanBusFrameEntry.Text != "" {
-			g.sendManualCanBusFrameCallback(manualCanBusFrameEntry.Text)
-			manualCanBusFrameEntry.SetText("")
-		}
-	})
+	sendManualFrameButton := widget.NewButton("Send CAN", func() { g.sendManualFrame(ctx) })
 
-	manualCanBusFrameEntryContainer := container.NewBorder(nil, nil, nil, sendManualCanBusFrameButton, manualCanBusFrameEntry)
+	manualFrameEntryContainer := container.NewBorder(nil, nil, nil, sendManualFrameButton, g.manualFrameEntry)
 
 	content := container.NewBorder(
 		nil,
-		manualCanBusFrameEntryContainer,
+		manualFrameEntryContainer,
 		nil,
 		nil,
 		g.logScrollContainer,
@@ -77,16 +78,13 @@ func (g *GUI) RunApp() {
 	g.isRunning = true
 
 	g.window.ShowAndRun()
+
+	return g
 }
 
-// SetSendManualCanBusFrameCallback allows setting the callback for sending manual CAN bus frames.
-func (g *GUI) SetSendManualCanBusFrameCallback(callback func(string)) {
-	g.sendManualCanBusFrameCallback = callback
-}
-
-func (g *GUI) WriteToLog(in string) bool {
+func (g *GUI) WriteToLog(in string) {
 	if !g.isRunning {
-		return false
+		return
 	}
 
 	// Combine existing log text with the new text
@@ -109,6 +107,24 @@ func (g *GUI) WriteToLog(in string) bool {
 	if g.autoScroll {
 		g.logScrollContainer.ScrollToBottom()
 	}
+}
 
-	return true
+func (g *GUI) sendManualFrame(ctx context.Context) {
+	e := services.Get(services.ServiceECU).(ecus.ECUProcessor)
+
+	if g.manualFrameEntry.Text != "" {
+		frame, err := protocols.StringToFrame(g.manualFrameEntry.Text)
+		if err != nil {
+			g.WriteToLog(fmt.Sprintf("error: parsing frame: %s\n", err.Error()))
+			return
+		}
+		// todo: this should call the ecu send frame
+		err = e.SendFrame(ctx, frame)
+		if err != nil {
+			g.WriteToLog(fmt.Sprintf("error: sending manual frame: %v", err))
+			return
+		}
+
+		g.manualFrameEntry.SetText("")
+	}
 }

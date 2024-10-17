@@ -8,85 +8,82 @@ import (
 
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
-	"husk/frames"
 	"husk/logging"
+	"husk/protocols"
+	"husk/services"
 )
 
 const (
-	BaudRate                 = 921600
-	StartMarker              = 0x7E
-	EndMarker                = 0x7F
-	EscapeChar               = 0x1B
-	ACK                      = 0x06
-	NACK                     = 0x15
-	MaxRetries               = 3
-	PortScanDelay            = 100 * time.Millisecond
-	PortOpenDelay            = 1000 * time.Millisecond
-	ReadTimeout              = 5 * time.Millisecond
-	ACKTimeout               = 100 * time.Millisecond
-	RetryDelay               = 100 * time.Millisecond
-	ExponentialBackoffFactor = 2
+	ArduinoBaudRate                 = 921600
+	ArduinoStartMarker              = 0x7E
+	ArduinoEndMarker                = 0x7F
+	ArduinoEscapeChar               = 0x1B
+	ArduinoACK                      = 0x06
+	ArduinoNACK                     = 0x15
+	ArduinoMaxRetries               = 3
+	ArduinoPortScanDelay            = 100 * time.Millisecond
+	ArduinoPortOpenDelay            = 1000 * time.Millisecond
+	ArduinoReadTimeout              = 5 * time.Millisecond
+	ArduinoACKTimeout               = 100 * time.Millisecond
+	ArduinoRetryDelay               = 100 * time.Millisecond
+	ArduinoExponentialBackoffFactor = 2
 )
 
 // ArduinoDriver handles serial communication with an Arduino device.
 type ArduinoDriver struct {
-	ctx       context.Context
 	isRunning bool
-	l         *logging.Logger
 	port      serial.Port
 	readChan  chan []byte
 	writeChan chan []byte
 	ackChan   chan bool
-	cancel    context.CancelFunc
 }
 
-// NewArduinoDriver initializes and returns a new ArduinoDriver.
-func NewArduinoDriver(ctx context.Context, logger *logging.Logger) Driver {
-	ctx, cancel := context.WithCancel(ctx)
-
-	arduinoDriver := &ArduinoDriver{
-		ctx:       ctx,
-		l:         logger,
+func RegisterArduinoDriver() Driver {
+	a := &ArduinoDriver{
 		readChan:  make(chan []byte, 32),
 		writeChan: make(chan []byte, 32),
 		ackChan:   make(chan bool, 32),
-		cancel:    cancel,
 	}
+	defer services.Register(services.ServiceDriver, a)
+	return a
+}
 
-	// Find Arduino port
+func (d *ArduinoDriver) Start(ctx context.Context) Driver {
 	go func() {
+		l := services.Get(services.ServiceLogger).(*logging.Logger)
+
 		portName, err := findArduinoPort(ctx)
 		if err != nil {
-			logger.WriteToLog(fmt.Sprintf("error: finding Arduino port: %s", err.Error()))
+			l.WriteToLog(fmt.Sprintf("error: finding Arduino port: %s", err.Error()))
 		}
 
 		// Give port time to init if arduino has just been plugged in.
-		time.Sleep(PortOpenDelay)
+		time.Sleep(ArduinoPortOpenDelay)
 
 		// Open serial port
-		mode := &serial.Mode{BaudRate: BaudRate}
-		arduinoDriver.port, err = serial.Open(portName, mode)
+		mode := &serial.Mode{BaudRate: ArduinoBaudRate}
+		d.port, err = serial.Open(portName, mode)
 		if err != nil {
-			logger.WriteToLog(fmt.Sprintf("error: opening port: %s", err.Error()))
+			l.WriteToLog(fmt.Sprintf("error: opening port: %s", err.Error()))
 		}
 		// Set read timeout
-		err = arduinoDriver.port.SetReadTimeout(ReadTimeout)
+		err = d.port.SetReadTimeout(ArduinoReadTimeout)
 		if err != nil {
-			logger.WriteToLog(fmt.Sprintf("error: setting read timeout: %s", err.Error()))
+			l.WriteToLog(fmt.Sprintf("error: setting read timeout: %s", err.Error()))
 		}
 
-		logger.WriteToLog(fmt.Sprintf("arduino connected on port %s", portName))
+		l.WriteToLog(fmt.Sprintf("arduino connected on port %s", portName))
 
 		// Start read and write loops
-		go arduinoDriver.readLoop()
-		go arduinoDriver.writeLoop()
+		go d.readLoop(ctx)
+		go d.writeLoop(ctx)
 
-		arduinoDriver.isRunning = true
+		d.isRunning = true
 
-		logger.WriteToLog("arduino driver initialized")
+		l.WriteToLog("arduino driver initialized")
 	}()
 
-	return arduinoDriver
+	return d
 }
 
 // findArduinoPort scans serial ports to find the Arduino, blocks until arduino is found or context is cancelled.
@@ -111,41 +108,44 @@ func findArduinoPort(ctx context.Context) (string, error) {
 				}
 			}
 
-			time.Sleep(PortScanDelay)
+			time.Sleep(ArduinoPortScanDelay)
 		}
 	}
 }
 
 // Cleanup closes the serial port and stops the read and write loops.
 func (d *ArduinoDriver) Cleanup() error {
-	d.cancel()
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
 	if d.port != nil {
 		err := d.port.Close()
 		if err != nil {
-			d.l.WriteToLog(fmt.Sprintf("error: closing port: %s", err.Error()))
+			l.WriteToLog(fmt.Sprintf("error: closing port: %s", err.Error()))
 			return err
 		}
-		d.l.WriteToLog("serial port closed successfully")
+		l.WriteToLog("serial port closed successfully")
 	}
 	return nil
 }
 
-// SendCanBusFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
-func (d *ArduinoDriver) SendCanBusFrame(frame *frames.Frame) error {
+// SendFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
+func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *protocols.CanFrame) error {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
 	if !d.isRunning {
 		return nil
 	}
 
 	frameBytes := d.createFrameBytes(frame)
 	ackReceived := false
-	retryDelay := RetryDelay
+	retryDelay := ArduinoRetryDelay
 
-	for retries := 0; retries < MaxRetries && !ackReceived; retries++ {
+	for retries := 0; retries < ArduinoMaxRetries && !ackReceived; retries++ {
 		// Send frame to the write channel without context.Done() check
 		d.writeChan <- frameBytes
 
 		if retries > 0 {
-			d.l.WriteToLog(fmt.Sprintf("sent frame: %v (attempt %d)", frameBytes, retries+1))
+			l.WriteToLog(fmt.Sprintf("sent frame: %v (attempt %d)", frameBytes, retries+1))
 		}
 
 		// Wait for ACK or NACK
@@ -154,30 +154,30 @@ func (d *ArduinoDriver) SendCanBusFrame(frame *frames.Frame) error {
 			if ackReceived {
 				return nil
 			}
-			d.l.WriteToLog("NACK received from Arduino")
-		case <-time.After(ACKTimeout):
-			d.l.WriteToLog("ACK timeout")
-		case <-d.ctx.Done():
+			l.WriteToLog("NACK received from Arduino")
+		case <-time.After(ArduinoACKTimeout):
+			l.WriteToLog("ACK timeout")
+		case <-ctx.Done():
 			return fmt.Errorf("operation cancelled")
 		}
 
 		if !ackReceived {
 			// Retry after a delay with exponential backoff
-			d.l.WriteToLog(fmt.Sprintf("ACK not received, retrying in %d milliseconds", retryDelay.Milliseconds()))
+			l.WriteToLog(fmt.Sprintf("ACK not received, retrying in %d milliseconds", retryDelay.Milliseconds()))
 			time.Sleep(retryDelay)
-			retryDelay *= ExponentialBackoffFactor
+			retryDelay *= ArduinoExponentialBackoffFactor
 		}
 	}
 
 	if !ackReceived {
-		return fmt.Errorf("error: failed to receive ACK after %d retries", MaxRetries)
+		return fmt.Errorf("error: failed to receive ACK after %d retries", ArduinoMaxRetries)
 	}
 
 	return nil
 }
 
-// ReadCanBusFrame retrieves a received CAN bus frame from the read channel.
-func (d *ArduinoDriver) ReadCanBusFrame() (*frames.Frame, error) {
+// ReadFrame retrieves a received CAN bus frame from the read channel.
+func (d *ArduinoDriver) ReadFrame(ctx context.Context) (*protocols.CanFrame, error) {
 	select {
 	case unstuffedBytes := <-d.readChan:
 		if unstuffedBytes == nil {
@@ -207,7 +207,7 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*frames.Frame, error) {
 		var dataBuffer [8]uint8
 		copy(dataBuffer[:], unstuffedBytes[3:3+dlc])
 
-		frame := &frames.Frame{
+		frame := &protocols.CanFrame{
 			ID:  id,
 			DLC: dlc,
 		}
@@ -223,33 +223,36 @@ func (d *ArduinoDriver) ReadCanBusFrame() (*frames.Frame, error) {
 		}
 
 		// Send ACK
-		err := d.sendResponse(ACK)
+		err := d.sendResponse(ArduinoACK)
 		if err != nil {
 			return nil, fmt.Errorf("error: failed to send ACK: %s", err.Error())
 		}
 
 		return frame, nil
 
-	case <-d.ctx.Done():
+	case <-ctx.Done():
 		return nil, fmt.Errorf("operation cancelled")
 	}
 }
 
-// readLoop continuously reads from the serial port and sends complete frames to the read channel.
-func (d *ArduinoDriver) readLoop() {
+// readLoop continuously reads from the serial port and sends complete protocols to the read channel.
+func (d *ArduinoDriver) readLoop(ctx context.Context) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
 	var buffer []byte
 	inFrame := false
 
 	for {
 		select {
-		case <-d.ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 			byteBuffer := make([]byte, 1)
 			n, err := d.port.Read(byteBuffer)
 			if err != nil && err != io.EOF {
-				d.l.WriteToLog(fmt.Sprintf("error: reading from port: %s", err))
-				continue
+				l.WriteToLog(fmt.Sprintf("error: reading from port, killing arduino driver: %s", err))
+				d.isRunning = false
+				return
 			}
 
 			if n <= 0 {
@@ -259,38 +262,38 @@ func (d *ArduinoDriver) readLoop() {
 			b := byteBuffer[0]
 
 			// Handle ACK or NACK bytes immediately
-			if !inFrame && (b == ACK || b == NACK) {
+			if !inFrame && (b == ArduinoACK || b == ArduinoNACK) {
 				select {
 				case d.ackChan <- ackByteToBool(b):
 					// Successfully sent ACK/NACK
 				default:
-					d.l.WriteToLog("ackChan is full, dropping ACK/NACK")
+					l.WriteToLog("ackChan is full, dropping ACK/NACK")
 				}
 				continue
 			}
 
 			switch {
-			case b == StartMarker:
+			case b == ArduinoStartMarker:
 				// Start of a new frame
 				inFrame = true
 				buffer = []byte{} // Reset the buffer for the new frame
 
-			case b == EndMarker && inFrame:
+			case b == ArduinoEndMarker && inFrame:
 				// End of the current frame
 				inFrame = false
 				d.readChan <- buffer
 
-			case inFrame && b == EscapeChar:
+			case inFrame && b == ArduinoEscapeChar:
 				// Handle byte stuffing
 				n, err := d.port.Read(byteBuffer)
 				if err != nil && err != io.EOF {
-					d.l.WriteToLog(fmt.Sprintf("error: reading from port after escape character: %s", err))
+					l.WriteToLog(fmt.Sprintf("error: reading from port after escape character: %s", err))
 					continue
 				}
 				if n > 0 {
 					unstuffedByte, err := d.unstuffByte(byteBuffer[0])
 					if err != nil {
-						d.l.WriteToLog(err.Error())
+						l.WriteToLog(err.Error())
 						continue
 					}
 					buffer = append(buffer, unstuffedByte)
@@ -304,34 +307,40 @@ func (d *ArduinoDriver) readLoop() {
 	}
 }
 
+// writeLoop continuously writes data from the write channel to the serial port.
+func (d *ArduinoDriver) writeLoop(ctx context.Context) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case frameBytes := <-d.writeChan:
+			_, err := d.port.Write(frameBytes)
+			if err != nil {
+				l.WriteToLog(fmt.Sprintf("error: writing to port, killing arduino driver: %s", err))
+				d.isRunning = false
+				return
+			}
+		}
+	}
+}
+
 func ackByteToBool(b byte) bool {
-	if b == ACK {
+	if b == ArduinoACK {
 		return true
 	}
 
 	return false
 }
 
-// writeLoop continuously writes data from the write channel to the serial port.
-func (d *ArduinoDriver) writeLoop() {
-	for {
-		select {
-		case <-d.ctx.Done():
-			return
-		case frameBytes := <-d.writeChan:
-			_, err := d.port.Write(frameBytes)
-			if err != nil {
-				d.l.WriteToLog(fmt.Sprintf("error: writing to port: %s", err))
-			}
-		}
-	}
-}
-
 // writeErrorResponse sends a NACK
 func (d *ArduinoDriver) writeErrorResponse() {
-	err := d.sendResponse(NACK)
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	err := d.sendResponse(ArduinoNACK)
 	if err != nil {
-		d.l.WriteToLog(fmt.Sprintf("error: while trying to send NACK: %s", err.Error()))
+		l.WriteToLog(fmt.Sprintf("error: while trying to send NACK: %s", err.Error()))
 	}
 }
 
@@ -342,21 +351,21 @@ func (d *ArduinoDriver) sendResponse(response byte) error {
 }
 
 // createFrameBytes constructs the byte sequence for a CAN bus frame with byte stuffing.
-func (d *ArduinoDriver) createFrameBytes(frame *frames.Frame) []byte {
-	frameBytes := []byte{StartMarker}
+func (d *ArduinoDriver) createFrameBytes(frame *protocols.CanFrame) []byte {
+	frameBytes := []byte{ArduinoStartMarker}
 
 	for _, b := range d.frameToBytes(frame) {
 		d.stuffByte(b, &frameBytes)
 	}
 
 	// End Marker
-	frameBytes = append(frameBytes, EndMarker)
+	frameBytes = append(frameBytes, ArduinoEndMarker)
 
 	return frameBytes
 }
 
 // frameToBytes converts the frame to a sequence of bytes.
-func (d *ArduinoDriver) frameToBytes(frame *frames.Frame) []byte {
+func (d *ArduinoDriver) frameToBytes(frame *protocols.CanFrame) []byte {
 	var frameBytes []byte
 
 	// CAN ID (2 bytes)
@@ -382,12 +391,12 @@ func (d *ArduinoDriver) frameToBytes(frame *frames.Frame) []byte {
 // stuffByte handles byte stuffing and appends to the output.
 func (d *ArduinoDriver) stuffByte(b byte, output *[]byte) {
 	switch b {
-	case StartMarker:
-		*output = append(*output, EscapeChar, 0x01)
-	case EndMarker:
-		*output = append(*output, EscapeChar, 0x02)
-	case EscapeChar:
-		*output = append(*output, EscapeChar, 0x03)
+	case ArduinoStartMarker:
+		*output = append(*output, ArduinoEscapeChar, 0x01)
+	case ArduinoEndMarker:
+		*output = append(*output, ArduinoEscapeChar, 0x02)
+	case ArduinoEscapeChar:
+		*output = append(*output, ArduinoEscapeChar, 0x03)
 	default:
 		*output = append(*output, b)
 	}
@@ -397,18 +406,18 @@ func (d *ArduinoDriver) stuffByte(b byte, output *[]byte) {
 func (d *ArduinoDriver) unstuffByte(b byte) (byte, error) {
 	switch b {
 	case 0x01:
-		return StartMarker, nil
+		return ArduinoStartMarker, nil
 	case 0x02:
-		return EndMarker, nil
+		return ArduinoEndMarker, nil
 	case 0x03:
-		return EscapeChar, nil
+		return ArduinoEscapeChar, nil
 	default:
 		return 0, fmt.Errorf("error: invalid escape sequence")
 	}
 }
 
 // calculateCRC8 computes the CRC-8 checksum for the given data.
-func calculateCRC8(frame *frames.Frame) byte {
+func calculateCRC8(frame *protocols.CanFrame) byte {
 	crc := byte(0x00)
 	const polynomial = byte(0x07) // CRC-8-CCITT
 

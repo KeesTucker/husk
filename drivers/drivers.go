@@ -1,11 +1,14 @@
 package drivers
 
 import (
-	"husk/frames"
+	"context"
+
+	"husk/protocols"
 )
 
 type Driver interface {
-	SendCanBusFrame(frame *frames.Frame) error
-	ReadCanBusFrame() (*frames.Frame, error)
+	Start(ctx context.Context) Driver
+	SendFrame(ctx context.Context, frame *protocols.CanFrame) error
+	ReadFrame(ctx context.Context) (*protocols.CanFrame, error)
 	Cleanup() error
 }
