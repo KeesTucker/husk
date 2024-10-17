@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/KeesTucker/husk/compare/husk-v1.2.0...husk-v1.3.0) (2024-10-17)
+
+
+### Features
+
+* changed the way services are handled to allow for more modular development and the addition of connect, disconnect and ecu selection ui. large refactor to support this. ([5370caf](https://github.com/KeesTucker/husk/commit/5370cafaa6ff56e97c8ff16aba86865fab499a58))
+
 ## [1.2.0](https://github.com/KeesTucker/husk/compare/husk-v1.1.0...husk-v1.2.0) (2024-10-16)
 
 
