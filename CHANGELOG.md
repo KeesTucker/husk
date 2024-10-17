@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/KeesTucker/husk/compare/husk-v1.1.0...husk-v1.2.0) (2024-10-16)
+
+
+### Features
+
+* started adding ECU processors. ([4a790ac](https://github.com/KeesTucker/husk/commit/4a790ac022ee228250f7ac8cd4ee9c434919b25c))
+
 ## [1.1.0](https://github.com/KeesTucker/husk/compare/husk-v1.0.12...husk-v1.1.0) (2024-10-16)
 
 

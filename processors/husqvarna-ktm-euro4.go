@@ -37,7 +37,7 @@ func (e *HusqvarnaKTMProcessor) TesterPresentLoop() {
 		case <-e.ctx.Done():
 			return
 		default:
-			e.sendCanBusFrame(frames.UDSTesterPresentFrame)
+			e.sendCanBusFrame(frames.GetUDSTesterPresentFrame())
 			e.l.WriteToLog("sent tester present frame")
 		}
 		time.Sleep(TesterPresentDelay)
