@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"husk/drivers"
 	"husk/ecus"
 	"husk/protocols"
 	"husk/services"
@@ -42,6 +43,16 @@ func RegisterGUI() *GUI {
 func (g *GUI) Start(ctx context.Context) *GUI {
 	g.autoScroll = true
 	g.app = app.New()
+
+	g.buildUI(ctx)
+
+	g.isRunning = true
+	g.window.ShowAndRun()
+
+	return g
+}
+
+func (g *GUI) buildUI(ctx context.Context) {
 	g.logLabel = widget.NewLabel("")
 	g.logLabel.Wrapping = fyne.TextWrapWord
 	g.logScrollContainer = container.NewVScroll(g.logLabel)
@@ -63,7 +74,11 @@ func (g *GUI) Start(ctx context.Context) *GUI {
 
 	manualFrameEntryContainer := container.NewBorder(nil, nil, nil, sendManualFrameButton, g.manualFrameEntry)
 
-	content := container.NewBorder(
+	connectArduinoButton := widget.NewButton("Connect Arduino", func() { drivers.RegisterArduinoDriver().Start(ctx) })
+	connectEuro4HusqvarnaKtmECUButton := widget.NewButton("Connect to Euro 4 Husqvarna/KTM", func() { ecus.RegisterHusqvarnaKtmEuro4Processor().Start(ctx) })
+	buttonContainer := container.NewGridWithRows(4, connectArduinoButton, connectEuro4HusqvarnaKtmECUButton)
+
+	canContainer := container.NewBorder(
 		nil,
 		manualFrameEntryContainer,
 		nil,
@@ -71,15 +86,11 @@ func (g *GUI) Start(ctx context.Context) *GUI {
 		g.logScrollContainer,
 	)
 
+	content := container.NewBorder(nil, nil, buttonContainer, canContainer)
+
 	g.window = g.app.NewWindow(windowName)
 	g.window.SetContent(content)
 	g.window.Resize(fyne.NewSize(600, 400))
-
-	g.isRunning = true
-
-	g.window.ShowAndRun()
-
-	return g
 }
 
 func (g *GUI) WriteToLog(in string) {

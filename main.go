@@ -2,13 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"husk/drivers"
-	"husk/ecus"
 	"husk/gui"
 	"husk/logging"
 )
@@ -24,8 +21,6 @@ func main() {
 
 	// Register and start services
 	l := logging.RegisterLogger().Start(ctx)
-	d := drivers.RegisterArduinoDriver().Start(ctx)
-	ecus.RegisterProcessor(ecus.ECUTypeHusqvarnaKTM).Start(ctx)
 
 	// Start a separate goroutine to listen for OS signals to handle shutdown gracefully
 	go func() {
@@ -39,9 +34,4 @@ func main() {
 	l.AddLogSub(g.WriteToLog)
 	// Start logger (this will block)
 	g.Start(ctx)
-
-	// Ensure cleanup of resources
-	if err := d.Cleanup(); err != nil {
-		l.WriteToLog(fmt.Sprintf("error: during driver cleanup: %s", err.Error()))
-	}
 }

@@ -52,6 +52,8 @@ func (d *ArduinoDriver) Start(ctx context.Context) Driver {
 	go func() {
 		l := services.Get(services.ServiceLogger).(*logging.Logger)
 
+		l.WriteToLog("scanning for arduino")
+
 		portName, err := findArduinoPort(ctx)
 		if err != nil {
 			l.WriteToLog(fmt.Sprintf("error: finding Arduino port: %s", err.Error()))
@@ -77,6 +79,10 @@ func (d *ArduinoDriver) Start(ctx context.Context) Driver {
 		// Start read and write loops
 		go d.readLoop(ctx)
 		go d.writeLoop(ctx)
+		go func() {
+			<-ctx.Done()
+			d.Cleanup()
+		}()
 
 		d.isRunning = true
 
@@ -113,19 +119,17 @@ func findArduinoPort(ctx context.Context) (string, error) {
 	}
 }
 
-// Cleanup closes the serial port and stops the read and write loops.
-func (d *ArduinoDriver) Cleanup() error {
+func (d *ArduinoDriver) Cleanup() {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
+	d.isRunning = false
 	if d.port != nil {
 		err := d.port.Close()
 		if err != nil {
 			l.WriteToLog(fmt.Sprintf("error: closing port: %s", err.Error()))
-			return err
 		}
 		l.WriteToLog("serial port closed successfully")
 	}
-	return nil
 }
 
 // SendFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
