@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/KeesTucker/husk/compare/husk-v1.4.0...husk-v1.5.0) (2024-10-18)
+
+
+### Features
+
+* added graceful scan, select and connection flow for drivers. UI update to match ([0ff9cd1](https://github.com/KeesTucker/husk/commit/0ff9cd13dfdc106c992611bec1f2b18221b11f60))
+
 ## [1.4.0](https://github.com/KeesTucker/husk/compare/husk-v1.3.0...husk-v1.4.0) (2024-10-17)
 
 
