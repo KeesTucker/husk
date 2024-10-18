@@ -16,6 +16,10 @@ func Register(name ServiceName, service interface{}) {
 	registry[name] = service
 }
 
+func Deregister(name ServiceName) {
+	delete(registry, name)
+}
+
 // Get retrieves a registered service
 func Get(name ServiceName) interface{} {
 	service := registry[name]

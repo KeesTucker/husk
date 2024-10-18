@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -21,8 +22,7 @@ const (
 	ArduinoACK                      = 0x06
 	ArduinoNACK                     = 0x15
 	ArduinoMaxRetries               = 3
-	ArduinoPortScanDelay            = 100 * time.Millisecond
-	ArduinoPortOpenDelay            = 1000 * time.Millisecond
+	ArduinoPortOpenDelay            = 500 * time.Millisecond
 	ArduinoReadTimeout              = 5 * time.Millisecond
 	ArduinoACKTimeout               = 100 * time.Millisecond
 	ArduinoRetryDelay               = 100 * time.Millisecond
@@ -32,50 +32,65 @@ const (
 // ArduinoDriver handles serial communication with an Arduino device.
 type ArduinoDriver struct {
 	isRunning bool
+	portName  string
 	port      serial.Port
 	readChan  chan []byte
 	writeChan chan []byte
 	ackChan   chan bool
 }
 
-func RegisterArduinoDriver() Driver {
-	a := &ArduinoDriver{
-		readChan:  make(chan []byte, 32),
-		writeChan: make(chan []byte, 32),
-		ackChan:   make(chan bool, 32),
+// ScanArduino scans serial ports to find Arduinos
+func ScanArduino(ports []*enumerator.PortDetails, drivers []Driver) []Driver {
+	for _, port := range ports {
+		if port.IsUSB {
+			// VID 2341 for Arduino, 1A86 for CH340, 2A03 for Arduino clone
+			if port.VID == "2341" || port.VID == "1A86" || port.VID == "2A03" {
+				drivers = append(drivers, &ArduinoDriver{
+					portName: port.Name,
+				})
+			}
+		}
 	}
-	defer services.Register(services.ServiceDriver, a)
-	return a
+
+	return drivers
+}
+
+func (d *ArduinoDriver) String() string {
+	return fmt.Sprintf("Arduino: %s", d.portName)
+}
+
+func (d *ArduinoDriver) Register() (Driver, error) {
+	var err error
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+	defer services.Register(services.ServiceDriver, d)
+
+	d.readChan = make(chan []byte, 32)
+	d.writeChan = make(chan []byte, 32)
+	d.ackChan = make(chan bool, 32)
+
+	// Give port time to init if arduino has just been plugged in.
+	time.Sleep(ArduinoPortOpenDelay)
+	// Open serial port
+	mode := &serial.Mode{BaudRate: ArduinoBaudRate}
+	d.port, err = serial.Open(d.portName, mode)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("error: opening port: %s", err.Error()))
+		return nil, err
+	}
+	// Set read timeout
+	err = d.port.SetReadTimeout(ArduinoReadTimeout)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("error: setting read timeout: %s", err.Error()))
+		return nil, err
+	}
+
+	l.WriteToLog(fmt.Sprintf("arduino connected on port %s", d.portName))
+	return d, nil
 }
 
 func (d *ArduinoDriver) Start(ctx context.Context) Driver {
 	go func() {
 		l := services.Get(services.ServiceLogger).(*logging.Logger)
-
-		l.WriteToLog("scanning for arduino")
-
-		portName, err := findArduinoPort(ctx)
-		if err != nil {
-			l.WriteToLog(fmt.Sprintf("error: finding Arduino port: %s", err.Error()))
-		}
-
-		// Give port time to init if arduino has just been plugged in.
-		time.Sleep(ArduinoPortOpenDelay)
-
-		// Open serial port
-		mode := &serial.Mode{BaudRate: ArduinoBaudRate}
-		d.port, err = serial.Open(portName, mode)
-		if err != nil {
-			l.WriteToLog(fmt.Sprintf("error: opening port: %s", err.Error()))
-		}
-		// Set read timeout
-		err = d.port.SetReadTimeout(ArduinoReadTimeout)
-		if err != nil {
-			l.WriteToLog(fmt.Sprintf("error: setting read timeout: %s", err.Error()))
-		}
-
-		l.WriteToLog(fmt.Sprintf("arduino connected on port %s", portName))
-
 		// Start read and write loops
 		go d.readLoop(ctx)
 		go d.writeLoop(ctx)
@@ -86,37 +101,10 @@ func (d *ArduinoDriver) Start(ctx context.Context) Driver {
 
 		d.isRunning = true
 
-		l.WriteToLog("arduino driver initialized")
+		l.WriteToLog("arduino driver running")
 	}()
 
 	return d
-}
-
-// findArduinoPort scans serial ports to find the Arduino, blocks until arduino is found or context is cancelled.
-func findArduinoPort(ctx context.Context) (string, error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("error: no Arduino found on the USB ports")
-		default:
-			ports, err := enumerator.GetDetailedPortsList()
-			if err != nil {
-				return "", err
-			}
-
-			// Find the first matching USB port
-			for _, port := range ports {
-				if port.IsUSB {
-					// VID 2341 for Arduino, 1A86 for CH340, 2A03 for Arduino clone
-					if port.VID == "2341" || port.VID == "1A86" || port.VID == "2A03" {
-						return port.Name, nil
-					}
-				}
-			}
-
-			time.Sleep(ArduinoPortScanDelay)
-		}
-	}
 }
 
 func (d *ArduinoDriver) Cleanup() {
@@ -253,7 +241,7 @@ func (d *ArduinoDriver) readLoop(ctx context.Context) {
 		default:
 			byteBuffer := make([]byte, 1)
 			n, err := d.port.Read(byteBuffer)
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, errorPortHasBeenClosed) {
 				l.WriteToLog(fmt.Sprintf("error: reading from port, killing arduino driver: %s", err))
 				d.isRunning = false
 				return

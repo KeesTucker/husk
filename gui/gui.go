@@ -27,11 +27,17 @@ type GUI struct {
 	// state
 	isRunning  bool
 	autoScroll bool
+	driverName string
 
 	// UI elements
-	logScrollContainer *container.Scroll
-	logLabel           *widget.Label
-	manualFrameEntry   *widget.Entry
+	logScrollContainer     *container.Scroll
+	logLabel               *widget.Label
+	manualFrameEntry       *widget.Entry
+	sendManualFrameButton  *widget.Button
+	driverScanButton       *widget.Button
+	driverSelect           *widget.Select
+	driverConnectButton    *widget.Button
+	driverDisconnectButton *widget.Button
 }
 
 func RegisterGUI() *GUI {
@@ -45,6 +51,7 @@ func (g *GUI) Start(ctx context.Context) *GUI {
 	g.app = app.New()
 
 	g.buildUI(ctx)
+	g.subToEvents()
 
 	g.isRunning = true
 	g.window.ShowAndRun()
@@ -69,14 +76,25 @@ func (g *GUI) buildUI(ctx context.Context) {
 
 	g.manualFrameEntry = widget.NewEntry()
 	g.manualFrameEntry.SetPlaceHolder(manualFrameEntryPlaceholder)
+	g.manualFrameEntry.Disable()
+	g.sendManualFrameButton = widget.NewButton("Send CAN", func() { g.sendManualFrame(ctx) })
+	g.sendManualFrameButton.Disable()
+	manualFrameEntryContainer := container.NewBorder(nil, nil, nil, g.sendManualFrameButton, g.manualFrameEntry)
 
-	sendManualFrameButton := widget.NewButton("Send CAN", func() { g.sendManualFrame(ctx) })
+	driverLabel := widget.NewLabel("Select Driver")
+	g.driverScanButton = widget.NewButton("Scan", drivers.ScanForDrivers)
+	g.driverSelect = widget.NewSelect(nil, func(_ string) {
+		g.driverConnectButton.Enable()
+	})
+	g.driverSelect.Disable()
+	g.driverConnectButton = widget.NewButton("Connect", func() { drivers.Connect(ctx, g.driverSelect.Selected) })
+	g.driverConnectButton.Disable()
+	g.driverDisconnectButton = widget.NewButton("Disconnect", func() { drivers.Disconnect() })
+	g.driverDisconnectButton.Disable()
+	driverContainer := container.NewHBox(driverLabel, g.driverScanButton, g.driverSelect, g.driverConnectButton, g.driverDisconnectButton)
 
-	manualFrameEntryContainer := container.NewBorder(nil, nil, nil, sendManualFrameButton, g.manualFrameEntry)
-
-	connectArduinoButton := widget.NewButton("Connect Arduino", func() { drivers.RegisterArduinoDriver().Start(ctx) })
 	connectEuro4HusqvarnaKtmECUButton := widget.NewButton("Connect to Euro 4 Husqvarna/KTM", func() { ecus.RegisterHusqvarnaKtmEuro4Processor().Start(ctx) })
-	buttonContainer := container.NewGridWithRows(4, connectArduinoButton, connectEuro4HusqvarnaKtmECUButton)
+	commandContainer := container.NewVBox(driverContainer, connectEuro4HusqvarnaKtmECUButton)
 
 	canContainer := container.NewBorder(
 		nil,
@@ -86,11 +104,17 @@ func (g *GUI) buildUI(ctx context.Context) {
 		g.logScrollContainer,
 	)
 
-	content := container.NewBorder(nil, nil, buttonContainer, canContainer)
+	content := container.NewHBox(commandContainer, canContainer)
 
 	g.window = g.app.NewWindow(windowName)
 	g.window.SetContent(content)
 	g.window.Resize(fyne.NewSize(600, 400))
+}
+
+func (g *GUI) subToEvents() {
+	drivers.SubscribeToScanEvent(g.onDriversScan)
+	drivers.SubscribeToConnectedEvent(g.onDriverConnected)
+	drivers.SubscribeToDisconnectedEvent(g.onDriverDisconnected)
 }
 
 func (g *GUI) WriteToLog(in string) {
@@ -138,4 +162,39 @@ func (g *GUI) sendManualFrame(ctx context.Context) {
 
 		g.manualFrameEntry.SetText("")
 	}
+}
+
+func (g *GUI) onDriversScan(availableDriverNames []string) {
+	g.driverSelect.SetOptions(availableDriverNames)
+	g.driverSelect.Selected = ""
+	if len(availableDriverNames) == 0 {
+		g.driverConnectButton.Disable()
+		g.driverSelect.Disable()
+		return
+	}
+	g.driverSelect.Enable()
+}
+
+func (g *GUI) onDriverConnected() {
+	g.driverScanButton.Disable()
+	g.driverSelect.Disable()
+	g.driverConnectButton.Disable()
+	g.driverDisconnectButton.Enable()
+}
+
+func (g *GUI) onDriverDisconnected() {
+	g.driverScanButton.Enable()
+	g.driverSelect.Enable()
+	g.driverConnectButton.Enable()
+	g.driverDisconnectButton.Disable()
+}
+
+func (g *GUI) onECUConnected() {
+	g.manualFrameEntry.Enable()
+	g.sendManualFrameButton.Enable()
+}
+
+func (g *GUI) onECUDisconnected() {
+	g.manualFrameEntry.Disable()
+	g.sendManualFrameButton.Disable()
 }
