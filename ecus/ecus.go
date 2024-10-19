@@ -2,16 +2,15 @@ package ecus
 
 import (
 	"context"
-
-	"husk/protocols"
 )
 
 type ECUType int
 
 type ECUProcessor interface {
 	Start(ctx context.Context) ECUProcessor
-	ProcessFrame(frame *protocols.CanFrame)
-	SendFrame(ctx context.Context, frame *protocols.CanFrame) error
+	SendData(ctx context.Context, data []byte) error
+	GetTesterId() uint16
+	GetECUId() uint16
 }
 
 func RegisterProcessor(ecuType ECUType) ECUProcessor {
@@ -22,3 +21,5 @@ func RegisterProcessor(ecuType ECUType) ECUProcessor {
 
 	return nil
 }
+
+// TODO: gracefully handle connection and disconnection of ECUs

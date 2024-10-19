@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"go.bug.st/serial/enumerator"
+	"husk/canbus"
 	"husk/logging"
-	"husk/protocols"
 	"husk/services"
 )
 
@@ -19,9 +19,9 @@ type Driver interface {
 	// Register is used to register the driver service with the service locator and to do any required initialisation
 	Register() (Driver, error)
 	// SendFrame sends a can frame using the driver
-	SendFrame(ctx context.Context, frame *protocols.CanFrame) error
-	// ReadFrame reads a can frame using the driver
-	ReadFrame(ctx context.Context) (*protocols.CanFrame, error)
+	SendFrame(ctx context.Context, frame *canbus.CanFrame) error
+	SubscribeToReadFrames() chan *canbus.CanFrame
+	UnsubscribeToReadFrames(ch chan *canbus.CanFrame)
 	// Cleanup cleans up any memory, channels, loops etc
 	Cleanup()
 }

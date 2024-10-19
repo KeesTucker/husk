@@ -8,9 +8,9 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"husk/canbus"
 	"husk/drivers"
 	"husk/ecus"
-	"husk/protocols"
 	"husk/services"
 )
 
@@ -93,7 +93,7 @@ func (g *GUI) buildUI(ctx context.Context) {
 	g.driverDisconnectButton.Disable()
 	driverContainer := container.NewHBox(driverLabel, g.driverScanButton, g.driverSelect, g.driverConnectButton, g.driverDisconnectButton)
 
-	connectEuro4HusqvarnaKtmECUButton := widget.NewButton("Connect to Euro 4 Husqvarna/KTM", func() { ecus.RegisterHusqvarnaKtmEuro4Processor().Start(ctx) })
+	connectEuro4HusqvarnaKtmECUButton := widget.NewButton("Connect to Euro 4 Husqvarna/KTM", func() { ecus.RegisterProcessor(ecus.ECUTypeHusqvarnaKTM).Start(ctx) })
 	commandContainer := container.NewVBox(driverContainer, connectEuro4HusqvarnaKtmECUButton)
 
 	canContainer := container.NewBorder(
@@ -148,13 +148,12 @@ func (g *GUI) sendManualFrame(ctx context.Context) {
 	e := services.Get(services.ServiceECU).(ecus.ECUProcessor)
 
 	if g.manualFrameEntry.Text != "" {
-		frame, err := protocols.StringToFrame(g.manualFrameEntry.Text)
+		data, err := canbus.StringToFrameData(g.manualFrameEntry.Text)
 		if err != nil {
 			g.WriteToLog(fmt.Sprintf("error: parsing frame: %s\n", err.Error()))
 			return
 		}
-		// todo: this should call the ecu send frame
-		err = e.SendFrame(ctx, frame)
+		err = e.SendData(ctx, data)
 		if err != nil {
 			g.WriteToLog(fmt.Sprintf("error: sending manual frame: %v", err))
 			return

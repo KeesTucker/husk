@@ -9,8 +9,8 @@ import (
 
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
+	"husk/canbus"
 	"husk/logging"
-	"husk/protocols"
 	"husk/services"
 )
 
@@ -31,12 +31,13 @@ const (
 
 // ArduinoDriver handles serial communication with an Arduino device.
 type ArduinoDriver struct {
-	isRunning bool
-	portName  string
-	port      serial.Port
-	readChan  chan []byte
-	writeChan chan []byte
-	ackChan   chan bool
+	isRunning        bool
+	portName         string
+	port             serial.Port
+	readChan         chan []byte
+	writeChan        chan []byte
+	ackChan          chan bool
+	frameBroadcaster *Broadcaster
 }
 
 // ScanArduino scans serial ports to find Arduinos
@@ -64,9 +65,10 @@ func (d *ArduinoDriver) Register() (Driver, error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	defer services.Register(services.ServiceDriver, d)
 
-	d.readChan = make(chan []byte, 32)
-	d.writeChan = make(chan []byte, 32)
-	d.ackChan = make(chan bool, 32)
+	d.readChan = make(chan []byte, 128)
+	d.writeChan = make(chan []byte, 128)
+	d.ackChan = make(chan bool, 128)
+	d.frameBroadcaster = NewBroadcaster()
 
 	// Give port time to init if arduino has just been plugged in.
 	time.Sleep(ArduinoPortOpenDelay)
@@ -94,6 +96,7 @@ func (d *ArduinoDriver) Start(ctx context.Context) Driver {
 		// Start read and write loops
 		go d.readLoop(ctx)
 		go d.writeLoop(ctx)
+		go d.broadcastFrames(ctx)
 		go func() {
 			<-ctx.Done()
 			d.Cleanup()
@@ -120,8 +123,8 @@ func (d *ArduinoDriver) Cleanup() {
 	}
 }
 
-// SendFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency.
-func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *protocols.CanFrame) error {
+// SendFrame sends a CAN bus frame to the Arduino, ensuring safe concurrency. DO NOT USE for high level comms. Use the ECU or protocol layer.
+func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *canbus.CanFrame) error {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
 	if !d.isRunning {
@@ -168,8 +171,40 @@ func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *protocols.CanFrame
 	return nil
 }
 
-// ReadFrame retrieves a received CAN bus frame from the read channel.
-func (d *ArduinoDriver) ReadFrame(ctx context.Context) (*protocols.CanFrame, error) {
+func (d *ArduinoDriver) SubscribeToReadFrames() chan *canbus.CanFrame {
+	return d.frameBroadcaster.Subscribe()
+}
+
+func (d *ArduinoDriver) UnsubscribeToReadFrames(ch chan *canbus.CanFrame) {
+	d.frameBroadcaster.Unsubscribe(ch)
+}
+
+func (d *ArduinoDriver) broadcastFrames(ctx context.Context) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	for {
+		select {
+		case <-ctx.Done():
+			l.WriteToLog("stopping CAN bus frame reading due to context cancellation")
+			return
+		default:
+			frame, err := d.readFrame(ctx)
+			if err != nil {
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return
+				}
+				l.WriteToLog(err.Error())
+			}
+			if frame != nil {
+				l.WriteToLog(fmt.Sprintf("RECIEVED: %s", frame.String()))
+				d.frameBroadcaster.Broadcast(frame)
+			}
+		}
+	}
+}
+
+// readFrame retrieves a received CAN bus frame from the read channel. Blocks until frame is received.
+func (d *ArduinoDriver) readFrame(ctx context.Context) (*canbus.CanFrame, error) {
 	select {
 	case unstuffedBytes := <-d.readChan:
 		if unstuffedBytes == nil {
@@ -196,10 +231,10 @@ func (d *ArduinoDriver) ReadFrame(ctx context.Context) (*protocols.CanFrame, err
 			return nil, fmt.Errorf("error: incomplete frame received, expected %d bytes but got %d", 3+int(dlc)+1, len(unstuffedBytes))
 		}
 
-		var dataBuffer [8]uint8
+		var dataBuffer [8]byte
 		copy(dataBuffer[:], unstuffedBytes[3:3+dlc])
 
-		frame := &protocols.CanFrame{
+		frame := &canbus.CanFrame{
 			ID:  id,
 			DLC: dlc,
 		}
@@ -343,7 +378,7 @@ func (d *ArduinoDriver) sendResponse(response byte) error {
 }
 
 // createFrameBytes constructs the byte sequence for a CAN bus frame with byte stuffing.
-func (d *ArduinoDriver) createFrameBytes(frame *protocols.CanFrame) []byte {
+func (d *ArduinoDriver) createFrameBytes(frame *canbus.CanFrame) []byte {
 	frameBytes := []byte{ArduinoStartMarker}
 
 	for _, b := range d.frameToBytes(frame) {
@@ -357,7 +392,7 @@ func (d *ArduinoDriver) createFrameBytes(frame *protocols.CanFrame) []byte {
 }
 
 // frameToBytes converts the frame to a sequence of bytes.
-func (d *ArduinoDriver) frameToBytes(frame *protocols.CanFrame) []byte {
+func (d *ArduinoDriver) frameToBytes(frame *canbus.CanFrame) []byte {
 	var frameBytes []byte
 
 	// CAN ID (2 bytes)
@@ -409,7 +444,7 @@ func (d *ArduinoDriver) unstuffByte(b byte) (byte, error) {
 }
 
 // calculateCRC8 computes the CRC-8 checksum for the given data.
-func calculateCRC8(frame *protocols.CanFrame) byte {
+func calculateCRC8(frame *canbus.CanFrame) byte {
 	crc := byte(0x00)
 	const polynomial = byte(0x07) // CRC-8-CCITT
 
