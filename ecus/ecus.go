@@ -10,12 +10,14 @@ import (
 type ECUType int
 
 type ECUProcessor interface {
-	Register() (ECUProcessor, error)
-	Start(ctx context.Context) (ECUProcessor, error)
-	SendData(ctx context.Context, data []byte) error
 	GetTesterId() uint16
 	GetECUId() uint16
 	String() string
+	Register() (ECUProcessor, error)
+	Start(ctx context.Context) (ECUProcessor, error)
+	Cleanup()
+	SendData(ctx context.Context, data []byte) error
+	ReadData(ctx context.Context) ([]byte, error)
 }
 
 var (
