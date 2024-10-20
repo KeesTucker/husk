@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/KeesTucker/husk/compare/husk-v1.5.0...husk-v1.6.0) (2024-10-20)
+
+
+### Features
+
+* implemented graceful ecu scan, connection, and disconnect. also did some refactoring. ([e0b26ca](https://github.com/KeesTucker/husk/commit/e0b26ca81e198257e3c81deaf8fefdf50eef294f))
+
 ## [1.5.0](https://github.com/KeesTucker/husk/compare/husk-v1.4.0...husk-v1.5.0) (2024-10-19)
 
 
