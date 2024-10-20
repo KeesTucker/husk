@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/KeesTucker/husk/compare/husk-v1.6.0...husk-v1.6.1) (2024-10-20)
+
+
+### Bug Fixes
+
+* small fixes to ecus connection/cleanup code ([c8d1cd0](https://github.com/KeesTucker/husk/commit/c8d1cd06190564d5080cc42ca2bec1f1f3e27643))
+
 ## [1.6.0](https://github.com/KeesTucker/husk/compare/husk-v1.5.0...husk-v1.6.0) (2024-10-20)
 
 
