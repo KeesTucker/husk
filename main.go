@@ -25,7 +25,7 @@ func main() {
 	// Start a separate goroutine to listen for OS signals to handle shutdown gracefully
 	go func() {
 		<-signalChan
-		l.WriteToLog("received shutdown signal, canceling context and cleaning up...")
+		l.WriteToLog("Received shutdown signal, canceling context and cleaning up")
 		cancel()
 	}()
 

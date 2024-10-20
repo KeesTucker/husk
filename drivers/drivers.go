@@ -2,7 +2,6 @@ package drivers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"go.bug.st/serial/enumerator"
@@ -15,13 +14,13 @@ type Driver interface {
 	// String returns a display name
 	String() string
 	// Start starts any driver loops and ensure the driver is fully running
-	Start(ctx context.Context) Driver
+	Start(ctx context.Context) (Driver, error)
 	// Register is used to register the driver service with the service locator and to do any required initialisation
 	Register() (Driver, error)
 	// SendFrame sends a can frame using the driver
 	SendFrame(ctx context.Context, frame *canbus.CanFrame) error
-	SubscribeToReadFrames() chan *canbus.CanFrame
-	UnsubscribeToReadFrames(ch chan *canbus.CanFrame)
+	SubscribeReadFrames() chan *canbus.CanFrame
+	UnsubscribeReadFrames(ch chan *canbus.CanFrame)
 	// Cleanup cleans up any memory, channels, loops etc
 	Cleanup()
 }
@@ -38,15 +37,13 @@ var (
 	disconnectFunc func()
 )
 
-var errorPortHasBeenClosed = errors.New("Port has been closed")
-
 func ScanForDrivers() {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
-	l.WriteToLog("scanning for drivers")
+	l.WriteToLog("Scanning for drivers")
 
 	ports, err := enumerator.GetDetailedPortsList()
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("error: failed to get ports: %v", err))
+		l.WriteToLog(fmt.Sprintf("Error: failed to get ports: %v", err))
 	}
 
 	availableDrivers = []Driver{}
@@ -62,10 +59,10 @@ func ScanForDrivers() {
 	scanEvent(availableDriverNames)
 
 	if len(availableDriverNames) == 0 {
-		l.WriteToLog("didn't find any available drivers")
+		l.WriteToLog("Didn't find any available drivers")
 		return
 	}
-	l.WriteToLog("found available drivers")
+	l.WriteToLog("Found available drivers")
 }
 
 func Connect(ctx context.Context, name string) {
@@ -73,24 +70,32 @@ func Connect(ctx context.Context, name string) {
 
 	driver, err := driverNameToDriver[name].Register()
 	if err != nil {
-		l.WriteToLog("error: failed to connect to driver")
+		l.WriteToLog("Error: failed to connect to driver")
 		disconnectEvent()
 		ScanForDrivers()
 		return
 	}
 	ctx, disconnectFunc = context.WithCancel(ctx)
-	driver.Start(ctx)
+	_, err = driver.Start(ctx)
+	if err != nil {
+		l.WriteToLog("Error: failed to start driver")
+		disconnectEvent()
+		ScanForDrivers()
+		return
+	}
 	connectEvent()
-	l.WriteToLog("connected to driver successfully")
+	l.WriteToLog("Connected to driver successfully")
 }
 
 func Disconnect() {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
-	services.Deregister(services.ServiceDriver)
-	disconnectFunc()
+	if disconnectFunc != nil {
+		disconnectFunc()
+	}
 	disconnectEvent()
-	l.WriteToLog("disconnected from driver successfully")
+	services.Deregister(services.ServiceDriver)
+	l.WriteToLog("Disconnected from driver successfully")
 }
 
 func SubscribeToScanEvent(callback func(availableDriverNames []string)) {

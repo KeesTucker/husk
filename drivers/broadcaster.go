@@ -10,7 +10,7 @@ import (
 
 type Broadcaster struct {
 	subscribers map[chan *canbus.CanFrame]struct{}
-	mutex       sync.Mutex
+	lock        sync.RWMutex
 }
 
 // NewBroadcaster creates a new Broadcaster.
@@ -23,31 +23,39 @@ func NewBroadcaster() *Broadcaster {
 // Subscribe adds a new subscriber and returns a channel to receive frames.
 func (b *Broadcaster) Subscribe() chan *canbus.CanFrame {
 	ch := make(chan *canbus.CanFrame, 128)
-	b.mutex.Lock()
+	b.lock.Lock()
 	b.subscribers[ch] = struct{}{}
-	b.mutex.Unlock()
+	b.lock.Unlock()
 	return ch
 }
 
 // Unsubscribe removes a subscriber.
 func (b *Broadcaster) Unsubscribe(ch chan *canbus.CanFrame) {
-	b.mutex.Lock()
+	b.lock.Lock()
 	delete(b.subscribers, ch)
 	close(ch)
-	b.mutex.Unlock()
+	b.lock.Unlock()
 }
 
 // Broadcast sends a frame to all subscribers.
 func (b *Broadcaster) Broadcast(frame *canbus.CanFrame) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
-	b.mutex.Lock()
+	b.lock.RLock()
+	defer b.lock.RUnlock()
 	for ch := range b.subscribers {
-		// Non-blocking send to prevent goroutine leak if a subscriber is slow or not reading.
 		select {
 		case ch <- frame:
 		default:
-			l.WriteToLog("slow subscriber, frame channel is full.")
+			l.WriteToLog("Error: slow subscriber, frame channel is full. dropping frame.")
 		}
 	}
-	b.mutex.Unlock()
+}
+
+func (b *Broadcaster) Cleanup() {
+	b.lock.Lock()
+	for channel := range b.subscribers {
+		delete(b.subscribers, channel)
+		close(channel)
+	}
+	b.lock.Unlock()
 }

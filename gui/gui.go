@@ -30,14 +30,18 @@ type GUI struct {
 	driverName string
 
 	// UI elements
-	logScrollContainer     *container.Scroll
-	logLabel               *widget.Label
-	manualFrameEntry       *widget.Entry
-	sendManualFrameButton  *widget.Button
 	driverScanButton       *widget.Button
 	driverSelect           *widget.Select
 	driverConnectButton    *widget.Button
 	driverDisconnectButton *widget.Button
+	ecuScanButton          *widget.Button
+	ecuSelect              *widget.Select
+	ecuConnectButton       *widget.Button
+	ecuDisconnectButton    *widget.Button
+	logScrollContainer     *container.Scroll
+	logLabel               *widget.Label
+	manualFrameEntry       *widget.Entry
+	sendManualFrameButton  *widget.Button
 }
 
 func RegisterGUI() *GUI {
@@ -89,14 +93,26 @@ func (g *GUI) buildUI(ctx context.Context) {
 	g.driverSelect.Disable()
 	g.driverConnectButton = widget.NewButton("Connect", func() { drivers.Connect(ctx, g.driverSelect.Selected) })
 	g.driverConnectButton.Disable()
-	g.driverDisconnectButton = widget.NewButton("Disconnect", func() { drivers.Disconnect() })
+	g.driverDisconnectButton = widget.NewButton("Disconnect", func() { drivers.Disconnect(); ecus.Disconnect() })
 	g.driverDisconnectButton.Disable()
 	driverContainer := container.NewHBox(driverLabel, g.driverScanButton, g.driverSelect, g.driverConnectButton, g.driverDisconnectButton)
 
-	connectEuro4HusqvarnaKtmECUButton := widget.NewButton("Connect to Euro 4 Husqvarna/KTM", func() { ecus.RegisterProcessor(ecus.ECUTypeHusqvarnaKTM).Start(ctx) })
-	commandContainer := container.NewVBox(driverContainer, connectEuro4HusqvarnaKtmECUButton)
+	ecuLabel := widget.NewLabel("Select Ecu")
+	g.ecuScanButton = widget.NewButton("Scan", ecus.ScanForECUs)
+	g.ecuScanButton.Disable()
+	g.ecuSelect = widget.NewSelect(nil, func(_ string) {
+		g.ecuConnectButton.Enable()
+	})
+	g.ecuSelect.Disable()
+	g.ecuConnectButton = widget.NewButton("Connect", func() { ecus.Connect(ctx, g.ecuSelect.Selected) })
+	g.ecuConnectButton.Disable()
+	g.ecuDisconnectButton = widget.NewButton("Disconnect", func() { ecus.Disconnect() })
+	g.ecuDisconnectButton.Disable()
+	ecuContainer := container.NewHBox(ecuLabel, g.ecuScanButton, g.ecuSelect, g.ecuConnectButton, g.ecuDisconnectButton)
 
-	canContainer := container.NewBorder(
+	commandContainer := container.NewVBox(driverContainer, ecuContainer)
+
+	canBusContainer := container.NewBorder(
 		nil,
 		manualFrameEntryContainer,
 		nil,
@@ -104,7 +120,7 @@ func (g *GUI) buildUI(ctx context.Context) {
 		g.logScrollContainer,
 	)
 
-	content := container.NewHBox(commandContainer, canContainer)
+	content := container.NewHBox(commandContainer, canBusContainer)
 
 	g.window = g.app.NewWindow(windowName)
 	g.window.SetContent(content)
@@ -115,6 +131,9 @@ func (g *GUI) subToEvents() {
 	drivers.SubscribeToScanEvent(g.onDriversScan)
 	drivers.SubscribeToConnectedEvent(g.onDriverConnected)
 	drivers.SubscribeToDisconnectedEvent(g.onDriverDisconnected)
+	ecus.SubscribeToScanEvent(g.onECUScan)
+	ecus.SubscribeToConnectedEvent(g.onECUConnected)
+	ecus.SubscribeToDisconnectedEvent(g.onECUDisconnected)
 }
 
 func (g *GUI) WriteToLog(in string) {
@@ -179,6 +198,7 @@ func (g *GUI) onDriverConnected() {
 	g.driverSelect.Disable()
 	g.driverConnectButton.Disable()
 	g.driverDisconnectButton.Enable()
+	g.ecuScanButton.Enable()
 }
 
 func (g *GUI) onDriverDisconnected() {
@@ -186,14 +206,34 @@ func (g *GUI) onDriverDisconnected() {
 	g.driverSelect.Enable()
 	g.driverConnectButton.Enable()
 	g.driverDisconnectButton.Disable()
+	g.ecuScanButton.Disable()
+}
+
+func (g *GUI) onECUScan(availableECUIds []string) {
+	g.ecuSelect.SetOptions(availableECUIds)
+	g.ecuSelect.Selected = ""
+	if len(availableECUIds) == 0 {
+		g.ecuConnectButton.Disable()
+		g.ecuSelect.Disable()
+		return
+	}
+	g.ecuSelect.Enable()
 }
 
 func (g *GUI) onECUConnected() {
+	g.ecuScanButton.Disable()
+	g.ecuSelect.Disable()
+	g.ecuConnectButton.Disable()
+	g.ecuDisconnectButton.Enable()
 	g.manualFrameEntry.Enable()
 	g.sendManualFrameButton.Enable()
 }
 
 func (g *GUI) onECUDisconnected() {
+	g.ecuScanButton.Enable()
+	g.ecuSelect.Enable()
+	g.ecuConnectButton.Enable()
+	g.ecuDisconnectButton.Disable()
 	g.manualFrameEntry.Disable()
 	g.sendManualFrameButton.Disable()
 }

@@ -20,6 +20,16 @@ const (
 	UDSPCIFrameTypeFC byte = 0x3
 )
 
+const (
+	UDSTesterID uint16 = 0x7E0
+	UDSECUID    uint16 = 0x7E8
+)
+
+const (
+	UDSNegativeResponseByte   byte = 0x7F
+	UDSPositiveResponseOffset byte = 0x40
+)
+
 var (
 	errorFCFrameTimeout        = errors.New("timeout while waiting for flow control frame from ecu for multi frame send")
 	errorMultiFrameReadTimeout = errors.New("timeout while waiting for consecutive frames from ecu")
@@ -103,8 +113,8 @@ func waitForFlowControlFrame(ctx context.Context, ecuId uint16) (separationTime 
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	readCtx, cancel := context.WithTimeout(ctx, frameWaitTimeout)
 	defer cancel()
-	frameChan := d.SubscribeToReadFrames()
-	defer d.UnsubscribeToReadFrames(frameChan)
+	frameChan := d.SubscribeReadFrames()
+	defer d.UnsubscribeReadFrames(frameChan)
 
 	for {
 		select {
@@ -137,7 +147,7 @@ func sleepForSeparationTime(separationTime byte) {
 		microseconds := 100 * (int(separationTime) - 0xF0)
 		time.Sleep(time.Duration(microseconds) * time.Microsecond)
 	} else {
-		l.WriteToLog("invalid separation time received, sleeping for 10ms")
+		l.WriteToLog("Invalid separation time received, setting separation time to 10 milliseconds")
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -188,8 +198,8 @@ func sendConsecutiveFrames(ctx context.Context, id uint16, data []byte, separati
 // ReadUDS is what you should use when writing high level comms with the ECU. ReadUDS blocks until a frame is received and then returns the complete byte array from the frame/s
 func ReadUDS(ctx context.Context, ecuId uint16) ([]byte, error) {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
-	frameChan := d.SubscribeToReadFrames()
-	defer d.UnsubscribeToReadFrames(frameChan)
+	frameChan := d.SubscribeReadFrames()
+	defer d.UnsubscribeReadFrames(frameChan)
 
 	for {
 		select {
@@ -215,12 +225,29 @@ func ReadUDS(ctx context.Context, ecuId uint16) ([]byte, error) {
 	}
 }
 
+func IsUDSPositiveResponse(serviceId byte, data []byte) bool {
+	if len(data) >= 1 && data[0] == serviceId+UDSPositiveResponseOffset {
+		return true
+	}
+	return false
+}
+
+func IsUDSNegativeResponse(serviceId byte, data []byte) (isNegative bool, nrc byte) {
+	if len(data) >= 3 && data[0] == UDSNegativeResponseByte && data[1] == serviceId {
+		nrc = data[2] // Negative response code (NRC)
+		isNegative = true
+		return
+	}
+	return
+}
+
 func receiveSingleFrame(frame *canbus.CanFrame) ([]byte, error) {
 	// Extract data length from the lower nibble of the PCI byte
 	dataLength := frame.Data[0] & 0x0F
 	// Copy the data into a byte slice
 	data := make([]byte, dataLength)
 	copy(data, frame.Data[1:dataLength+1])
+
 	return data, nil
 }
 
