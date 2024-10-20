@@ -24,7 +24,7 @@ type KTM16To20Processor struct {
 
 const (
 	KTM16To20TesterPresentDelay = 2000 * time.Millisecond
-	KTM16To20ReadIdTimeout      = 1000 * time.Millisecond
+	KTM16To20ReadIdTimeout      = 2000 * time.Millisecond
 )
 
 const (
@@ -70,7 +70,7 @@ func (e *KTM16To20Processor) readECUIdentification(ctx context.Context) (result 
 
 	for identifier := byte(0x01); identifier <= byte(0xFF); identifier++ {
 		requestData := []byte{KTM16To20ReadIdentificationServiceId, identifier}
-		err = e.SendData(ctx, requestData)
+		err = protocols.SendUDS(ctx, protocols.UDSTesterID, protocols.UDSECUID, requestData)
 		if err != nil {
 			return "", err
 		}
@@ -84,7 +84,7 @@ func (e *KTM16To20Processor) readECUIdentification(ctx context.Context) (result 
 				l.WriteToLog(fmt.Sprintf("Timeout waiting for response for identifier %d\n", identifier))
 				break readIdLoop
 			default:
-				data, err := e.ReadData(readIdCtx)
+				data, err := protocols.ReadUDS(readIdCtx, protocols.UDSECUID)
 				if err != nil {
 					cancel()
 					return "", err
