@@ -14,9 +14,9 @@ struct can_frame rxFrame;
 struct can_frame txFrame;
 
 const int MAX_RETRIES = 3; // Maximum number of retries
-const unsigned long READ_TIMEOUT_MS = 5; // Timeout for waiting on Serial
-const unsigned long ACK_TIMEOUT_MS = 100; // Timeout for waiting for ACK/NACK
-const unsigned long RETRY_DELAY_MS = 100; // Timeout for waiting for ACK/NACK
+const unsigned long READ_TIMEOUT_MS = 5; 
+const unsigned long ACK_TIMEOUT_MS = 500; 
+const unsigned long RETRY_DELAY_MS = 200; 
 
 void setup() {
     Serial.begin(921600);

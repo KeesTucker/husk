@@ -3,6 +3,7 @@ package protocols
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"husk/canbus"
@@ -11,7 +12,7 @@ import (
 	"husk/services"
 )
 
-const frameWaitTimeout = 1000 * time.Millisecond
+const frameWaitTimeout = 10 * time.Second
 
 const (
 	UDSPCIFrameTypeSF byte = 0x0
@@ -196,7 +197,7 @@ func sendConsecutiveFrames(ctx context.Context, id uint16, data []byte, separati
 }
 
 // ReadUDS is what you should use when writing high level comms with the ECU. ReadUDS blocks until a frame is received and then returns the complete byte array from the frame/s
-func ReadUDS(ctx context.Context, ecuId uint16) ([]byte, error) {
+func ReadUDS(ctx context.Context, testerId uint16, ecuId uint16) ([]byte, error) {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	frameChan := d.SubscribeReadFrames()
 	defer d.UnsubscribeReadFrames(frameChan)
@@ -213,8 +214,7 @@ func ReadUDS(ctx context.Context, ecuId uint16) ([]byte, error) {
 				// Handle single frame reception
 				return receiveSingleFrame(frame)
 			case UDSPCIFrameTypeFF:
-				// Handle multi-frame reception
-				return receiveMultiFrame(ctx, frameChan, frame)
+				return receiveMultiFrame(ctx, testerId, frameChan, frame)
 			default:
 				// Ignore frames that don't match expected types
 				continue
@@ -251,10 +251,7 @@ func receiveSingleFrame(frame *canbus.CanFrame) ([]byte, error) {
 	return data, nil
 }
 
-func receiveMultiFrame(ctx context.Context, frameChan <-chan *canbus.CanFrame, firstFrame *canbus.CanFrame) ([]byte, error) {
-	readCtx, cancel := context.WithTimeout(ctx, frameWaitTimeout)
-	defer cancel()
-
+func receiveMultiFrame(ctx context.Context, testerId uint16, frameChan <-chan *canbus.CanFrame, firstFrame *canbus.CanFrame) ([]byte, error) {
 	// Extract data length from the first two bytes of the first frame
 	dataLength := (uint16(firstFrame.Data[0]&0x0F) << 8) | uint16(firstFrame.Data[1])
 
@@ -267,7 +264,16 @@ func receiveMultiFrame(ctx context.Context, frameChan <-chan *canbus.CanFrame, f
 	bytesReceived := 6
 	frameIndex := byte(1)
 
+	// Send Flow Control Frame before proceeding
+	err := sendFlowControlFrame(testerId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send flow control frame: %v", err)
+	}
+
+	var cancel context.CancelFunc
 	for bytesReceived < int(dataLength) {
+		var readCtx context.Context
+		readCtx, cancel = context.WithTimeout(ctx, frameWaitTimeout)
 		select {
 		case frame := <-frameChan:
 			if frame.ID != firstFrame.ID {
@@ -282,6 +288,7 @@ func receiveMultiFrame(ctx context.Context, frameChan <-chan *canbus.CanFrame, f
 			// Check the sequence number
 			seqNum := frame.Data[0] & 0x0F
 			if seqNum != frameIndex {
+				cancel()
 				return nil, errorUnexpectedFrameIndex
 			}
 
@@ -295,9 +302,36 @@ func receiveMultiFrame(ctx context.Context, frameChan <-chan *canbus.CanFrame, f
 			copy(data[bytesReceived:], frame.Data[1:bytesToCopy+1])
 			bytesReceived += bytesToCopy
 			frameIndex = (frameIndex + 1) % 16
+			cancel()
 		case <-readCtx.Done():
+			cancel()
 			return nil, errorMultiFrameReadTimeout
 		}
 	}
+	cancel()
 	return data, nil
+}
+
+func sendFlowControlFrame(testerId uint16) error {
+	d := services.Get(services.ServiceDriver).(drivers.Driver)
+
+	// Construct the FC frame data
+	fcFrameData := [8]byte{}
+	fcFrameData[0] = (UDSPCIFrameTypeFC << 4) | 0x00 // Flow Status: Continue to send (CTS)
+	fcFrameData[1] = 0x00                            // Block Size (BS): 0 means sender can send all CFs without waiting for further FCs
+	fcFrameData[2] = 0x00                            // Separation Time (STmin): 0 means minimum separation time
+
+	// Create the CAN frame
+	fcFrame := &canbus.CanFrame{
+		ID:   testerId,
+		DLC:  3,
+		Data: fcFrameData,
+	}
+
+	// Send the FC frame using your CAN bus interface
+	err := d.SendFrame(context.Background(), fcFrame)
+	if err != nil {
+		return err
+	}
+	return nil
 }

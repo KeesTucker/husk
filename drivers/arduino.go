@@ -26,8 +26,8 @@ const (
 	ArduinoMaxRetries               = 3
 	ArduinoPortOpenDelay            = 500 * time.Millisecond
 	ArduinoReadTimeout              = 5 * time.Millisecond
-	ArduinoACKTimeout               = 100 * time.Millisecond
-	ArduinoRetryDelay               = 100 * time.Millisecond
+	ArduinoACKTimeout               = 500 * time.Millisecond
+	ArduinoRetryDelay               = 200 * time.Millisecond
 	ArduinoExponentialBackoffFactor = 2
 )
 

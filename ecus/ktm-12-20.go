@@ -3,6 +3,7 @@ package ecus
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,7 +25,7 @@ type KTM16To20Processor struct {
 
 const (
 	KTM16To20TesterPresentDelay = 2000 * time.Millisecond
-	KTM16To20ReadIdTimeout      = 2000 * time.Millisecond
+	KTM16To20ReadIdTimeout      = 60 * time.Second
 )
 
 const (
@@ -68,7 +69,7 @@ func ScanKTM16To20(ecus []ECUProcessor) []ECUProcessor {
 func (e *KTM16To20Processor) readECUIdentification(ctx context.Context) (result string, err error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
-	for identifier := byte(0x01); identifier <= byte(0xFF); identifier++ {
+	for identifier := byte(0x01); identifier <= byte(0x08); identifier++ {
 		requestData := []byte{KTM16To20ReadIdentificationServiceId, identifier}
 		err = protocols.SendUDS(ctx, protocols.UDSTesterID, protocols.UDSECUID, requestData)
 		if err != nil {
@@ -84,7 +85,7 @@ func (e *KTM16To20Processor) readECUIdentification(ctx context.Context) (result 
 				l.WriteToLog(fmt.Sprintf("Timeout waiting for response for identifier %d\n", identifier))
 				break readIdLoop
 			default:
-				data, err := protocols.ReadUDS(readIdCtx, protocols.UDSECUID)
+				data, err := protocols.ReadUDS(readIdCtx, protocols.UDSTesterID, protocols.UDSECUID)
 				if err != nil {
 					cancel()
 					return "", err
@@ -105,7 +106,20 @@ func (e *KTM16To20Processor) readECUIdentification(ctx context.Context) (result 
 				if protocols.IsUDSPositiveResponse(KTM16To20ReadIdentificationServiceId, data) &&
 					data[1] == identifier {
 					identificationData := data[2:]
-					result += string(identificationData) + "\n"
+					var builder strings.Builder
+
+					for _, b := range identificationData {
+						if b >= 32 && b <= 126 {
+							// Append ASCII characters directly
+							builder.WriteByte(b)
+						} else {
+							// Replace non-ASCII bytes with their hex representation
+							builder.WriteString(fmt.Sprintf(" 0x%02X ", b))
+						}
+					}
+
+					result += builder.String() + "\n"
+					fmt.Println(result)
 					break readIdLoop
 				}
 			}
@@ -176,7 +190,7 @@ func (e *KTM16To20Processor) ReadData(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("ecu is not connected")
 	}
 
-	data, err := protocols.ReadUDS(ctx, protocols.UDSECUID)
+	data, err := protocols.ReadUDS(ctx, protocols.UDSTesterID, protocols.UDSECUID)
 	if err != nil {
 		return nil, err
 	}
