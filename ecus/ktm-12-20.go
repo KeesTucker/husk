@@ -3,6 +3,7 @@ package ecus
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 type KTM16To20Processor struct {
 	isRunning  int32 // Use int32 for atomic operations
 	id         string
+	wg         sync.WaitGroup
 	cancelFunc context.CancelFunc
 }
 
@@ -74,6 +76,7 @@ func (e *KTM16To20Processor) readECUIdentification(ctx context.Context) (result 
 		}
 		readIdCtx, cancel := context.WithTimeout(ctx, KTM16To20ReadIdTimeout)
 
+		// TODO: probably worth extracting this to a function. this is kinda feral to have to copy paste everywhere
 	readIdLoop:
 		for {
 			select {
@@ -123,7 +126,19 @@ func (e *KTM16To20Processor) Register() (ECUProcessor, error) {
 }
 
 func (e *KTM16To20Processor) Start(ctx context.Context) (ECUProcessor, error) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	// Create a cancellable context
+	ctx, e.cancelFunc = context.WithCancel(ctx)
+
+	// Mark the driver as running
+	atomic.StoreInt32(&e.isRunning, 1)
+
+	// Start the main loops
+	e.wg.Add(1)
 	go e.testerPresentLoop(ctx)
+
+	l.WriteToLog("ECU processor running")
 	return e, nil
 }
 
@@ -139,10 +154,15 @@ func (e *KTM16To20Processor) Cleanup() {
 		e.cancelFunc()
 	}
 
-	// Close channels to unblock goroutines
+	// Wait for all goroutines to finish
+	e.wg.Wait()
 }
 
 func (e *KTM16To20Processor) SendData(ctx context.Context, data []byte) error {
+	if atomic.LoadInt32(&e.isRunning) == 0 {
+		return fmt.Errorf("ecu is not connected")
+	}
+
 	err := protocols.SendUDS(ctx, protocols.UDSTesterID, protocols.UDSECUID, data)
 	if err != nil {
 		return err
@@ -152,6 +172,10 @@ func (e *KTM16To20Processor) SendData(ctx context.Context, data []byte) error {
 }
 
 func (e *KTM16To20Processor) ReadData(ctx context.Context) ([]byte, error) {
+	if atomic.LoadInt32(&e.isRunning) == 0 {
+		return nil, fmt.Errorf("ecu is not connected")
+	}
+
 	data, err := protocols.ReadUDS(ctx, protocols.UDSECUID)
 	if err != nil {
 		return nil, err
@@ -162,6 +186,7 @@ func (e *KTM16To20Processor) ReadData(ctx context.Context) ([]byte, error) {
 
 func (e *KTM16To20Processor) testerPresentLoop(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
+	defer e.wg.Done()
 
 	for {
 		select {

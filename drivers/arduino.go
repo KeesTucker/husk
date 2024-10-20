@@ -108,8 +108,7 @@ func (d *ArduinoDriver) Start(ctx context.Context) (Driver, error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
 	// Create a cancellable context
-	ctx, cancel := context.WithCancel(ctx)
-	d.cancelFunc = cancel
+	ctx, d.cancelFunc = context.WithCancel(ctx)
 
 	// Mark the driver as running
 	atomic.StoreInt32(&d.isRunning, 1)
