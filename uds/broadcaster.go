@@ -50,7 +50,6 @@ func (b *MessageBroadcaster) Broadcast(message *Message) {
 		}
 	}
 }
-
 func (b *MessageBroadcaster) Cleanup() {
 	b.lock.Lock()
 	for channel := range b.subscribers {

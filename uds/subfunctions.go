@@ -96,7 +96,6 @@ func (m *Message) SubfunctionLabel() string {
 	if m.Subfunction != nil {
 		return "N/A"
 	}
-
 	if subMap, exists := subfunctionNames[m.ServiceID]; exists {
 		if subName, found := subMap[*m.Subfunction]; found {
 			return subName

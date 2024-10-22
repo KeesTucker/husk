@@ -94,7 +94,6 @@ func (m *Message) NRCLabel() string {
 	if m.NRC == nil {
 		return "N/A"
 	}
-
 	// Lookup the NRC name
 	if nrcName, ok := nrcNames[*m.NRC]; ok {
 		return nrcName

@@ -22,13 +22,11 @@ func RawDataToMessage(senderID uint16, rawData []byte) *Message {
 	if len(rawData) == 0 {
 		return nil // Handle cases where the data is empty
 	}
-
 	serviceId := rawData[0] - PositiveResponseServiceIdOffset
 	isSuccess := rawData[0] != NegativeResponseByte
 	var subfunction *byte // Optional subfunction, usually the second byte
 	var nrc *byte         // Optional NRC for negative responses
 	data := rawData[1:]   // The remaining data, excluding the service ID
-
 	// If it's a negative response, adjust the service ID and extract the NRC
 	if !isSuccess && len(data) > 1 {
 		serviceId = data[0]
@@ -39,7 +37,6 @@ func RawDataToMessage(senderID uint16, rawData []byte) *Message {
 		subfunction = &data[0]
 		data = data[1:] // Remove the subfunction from the data array
 	}
-
 	return &Message{
 		SenderID:    senderID,
 		ServiceID:   serviceId,
@@ -49,60 +46,46 @@ func RawDataToMessage(senderID uint16, rawData []byte) *Message {
 		IsSuccess:   &isSuccess,
 	}
 }
-
 func (m *Message) ToRawData() []byte {
 	var rawData []byte
 	if m.IsSuccess == nil {
 		// Treat this as an outgoing request since IsSuccess is nil
 		// Outgoing Request Handling
 		rawData = append(rawData, m.ServiceID)
-
 		// Include Subfunction if present.
 		if m.Subfunction != nil {
 			rawData = append(rawData, *m.Subfunction)
 		}
-
 		// Append the remaining data.
 		rawData = append(rawData, m.Data...)
-
 		return rawData
 	}
-
 	if *m.IsSuccess {
 		// Positive Response Handling
 		// The first byte is the original Service ID plus the positive response offset (0x40).
 		positiveServiceID := m.ServiceID + PositiveResponseServiceIdOffset
 		rawData = append(rawData, positiveServiceID)
-
 		// Include Subfunction if present.
 		if m.Subfunction != nil {
 			rawData = append(rawData, *m.Subfunction)
 		}
-
 		// Append the remaining data.
 		rawData = append(rawData, m.Data...)
-
 		return rawData
 	}
-
 	// Negative Response Handling
 	// The first byte is the Negative Response Service ID (0x7F).
 	rawData = append(rawData, NegativeResponseByte)
-
 	// The second byte is the original Service ID that caused the negative response.
 	rawData = append(rawData, m.ServiceID)
-
 	// The third byte is the Negative Response Code (NRC). This should always be present. Could be worth throwing an error here in future if it is nil
 	if m.NRC != nil {
 		rawData = append(rawData, *m.NRC)
 	}
-
 	// Append the remaining data, if any.
 	rawData = append(rawData, m.Data...)
-
 	return rawData
 }
-
 func (m *Message) String() string {
 	dataStr := ""
 	for i := 0; i < len(m.Data); i++ {
@@ -128,7 +111,6 @@ func (m *Message) ASCIIRepresentation() string {
 	}
 	return strings.Join(asciiStrings, "")
 }
-
 func (m *Message) SenderLabel() string {
 	switch m.SenderID {
 	case ECUID:
@@ -139,11 +121,9 @@ func (m *Message) SenderLabel() string {
 		return fmt.Sprintf("0x%03X", m.SenderID)
 	}
 }
-
 func (m *Message) Send(ctx context.Context) error {
 	rawData := m.ToRawData()
 	dataLength := uint16(len(rawData))
-
 	// Single frame message
 	if dataLength <= 7 {
 		err := sendSingleFrame(ctx, m.SenderID, dataLength, rawData)

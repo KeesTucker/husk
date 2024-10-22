@@ -51,7 +51,6 @@ func (b *CanFrameBroadcaster) Broadcast(frame *canbus.CanFrame) {
 		}
 	}
 }
-
 func (b *CanFrameBroadcaster) Cleanup() {
 	b.lock.Lock()
 	for channel := range b.subscribers {
