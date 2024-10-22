@@ -98,7 +98,9 @@ func (g *GUI) buildUI(ctx context.Context) {
 	driverContainer := container.NewHBox(driverLabel, g.driverScanButton, g.driverSelect, g.driverConnectButton, g.driverDisconnectButton)
 
 	ecuLabel := widget.NewLabel("Select Ecu")
-	g.ecuScanButton = widget.NewButton("Scan", ecus.ScanForECUs)
+	g.ecuScanButton = widget.NewButton("Scan", func() {
+		ecus.ScanForECUs(ctx)
+	})
 	g.ecuScanButton.Disable()
 	g.ecuSelect = widget.NewSelect(nil, func(_ string) {
 		g.ecuConnectButton.Enable()
@@ -172,7 +174,7 @@ func (g *GUI) sendManualFrame(ctx context.Context) {
 			g.WriteToLog(fmt.Sprintf("error: parsing frame: %s\n", err.Error()))
 			return
 		}
-		err = e.SendData(ctx, data)
+		err = e.SendMessage(ctx, data)
 		if err != nil {
 			g.WriteToLog(fmt.Sprintf("error: sending manual frame: %v", err))
 			return

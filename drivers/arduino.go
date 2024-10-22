@@ -42,7 +42,7 @@ type ArduinoDriver struct {
 	readChan         chan []byte
 	writeChan        chan []byte
 	ackChan          chan bool
-	frameBroadcaster *Broadcaster
+	frameBroadcaster *CanFrameBroadcaster
 	wg               sync.WaitGroup
 	cancelFunc       context.CancelFunc
 }
@@ -76,7 +76,7 @@ func (d *ArduinoDriver) Register() (Driver, error) {
 	d.readChan = make(chan []byte, 128)
 	d.writeChan = make(chan []byte, 128)
 	d.ackChan = make(chan bool, 128)
-	d.frameBroadcaster = NewBroadcaster()
+	d.frameBroadcaster = NewCanFrameBroadcaster()
 
 	// Give the port time to initialize if the Arduino has just been plugged in
 	time.Sleep(ArduinoPortOpenDelay)
@@ -281,6 +281,7 @@ func (d *ArduinoDriver) assembleFramesFromSerial(ctx context.Context) {
 			case b == ArduinoEndMarker && inFrame:
 				// End of the current frame
 				inFrame = false
+				fmt.Println(buffer)
 				// Send the unstuffed frame to readChan
 				select {
 				case d.readChan <- buffer:
@@ -326,7 +327,7 @@ func (d *ArduinoDriver) processAndBroadcastFrames(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			l.WriteToLog("Stopping CAN bus frame reading due to context cancellation")
+			l.WriteToLog("Stopping CAN bus frame processing due to context cancellation")
 			return
 		default:
 			frame, err := d.readFrame(ctx)

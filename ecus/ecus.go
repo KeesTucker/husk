@@ -5,19 +5,22 @@ import (
 
 	"husk/logging"
 	"husk/services"
+	"husk/uds"
 )
 
 type ECUType int
 
 type ECUProcessor interface {
+	String() string
 	GetTesterId() uint16
 	GetECUId() uint16
-	String() string
-	Register() (ECUProcessor, error)
 	Start(ctx context.Context) (ECUProcessor, error)
+	Register() (ECUProcessor, error)
+	SendMessage(ctx context.Context, data []byte) error
+	ReadMessage(ctx context.Context, serviceId *byte, subfunction *byte) (*uds.Message, error)
+	SubscribeReadMessages() (chan *uds.Message, error)
+	UnsubscribeReadMessages(ch chan *uds.Message)
 	Cleanup()
-	SendData(ctx context.Context, data []byte) error
-	ReadData(ctx context.Context) ([]byte, error)
 }
 
 var (
@@ -32,12 +35,12 @@ var (
 	disconnectFunc func()
 )
 
-func ScanForECUs() {
+func ScanForECUs(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	l.WriteToLog("Scanning for ecus")
 
 	availableECUs = []ECUProcessor{}
-	availableECUs = ScanKTM16To20(availableECUs)
+	availableECUs = ScanKTM16To20(ctx, availableECUs)
 
 	availableECUIds = make([]string, len(availableECUs))
 	ecuIdToECU = make(map[string]ECUProcessor)
@@ -62,7 +65,7 @@ func Connect(ctx context.Context, name string) {
 	if err != nil {
 		l.WriteToLog("Error: failed to connect to ECU")
 		disconnectEvent()
-		ScanForECUs()
+		ScanForECUs(ctx)
 		return
 	}
 	ctx, disconnectFunc = context.WithCancel(ctx)
@@ -70,7 +73,7 @@ func Connect(ctx context.Context, name string) {
 	if err != nil {
 		l.WriteToLog("Error: failed to start ECU processor")
 		disconnectEvent()
-		ScanForECUs()
+		ScanForECUs(ctx)
 		return
 	}
 	connectEvent()

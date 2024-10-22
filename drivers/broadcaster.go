@@ -8,20 +8,21 @@ import (
 	"husk/services"
 )
 
-type Broadcaster struct {
+// CanFrameBroadcaster broadcasts raw CANBUS Frames received by the driver
+type CanFrameBroadcaster struct {
 	subscribers map[chan *canbus.CanFrame]struct{}
 	lock        sync.RWMutex
 }
 
-// NewBroadcaster creates a new Broadcaster.
-func NewBroadcaster() *Broadcaster {
-	return &Broadcaster{
+// NewCanFrameBroadcaster creates a new CanFrameBroadcaster.
+func NewCanFrameBroadcaster() *CanFrameBroadcaster {
+	return &CanFrameBroadcaster{
 		subscribers: make(map[chan *canbus.CanFrame]struct{}),
 	}
 }
 
 // Subscribe adds a new subscriber and returns a channel to receive frames.
-func (b *Broadcaster) Subscribe() chan *canbus.CanFrame {
+func (b *CanFrameBroadcaster) Subscribe() chan *canbus.CanFrame {
 	ch := make(chan *canbus.CanFrame, 128)
 	b.lock.Lock()
 	b.subscribers[ch] = struct{}{}
@@ -30,7 +31,7 @@ func (b *Broadcaster) Subscribe() chan *canbus.CanFrame {
 }
 
 // Unsubscribe removes a subscriber.
-func (b *Broadcaster) Unsubscribe(ch chan *canbus.CanFrame) {
+func (b *CanFrameBroadcaster) Unsubscribe(ch chan *canbus.CanFrame) {
 	b.lock.Lock()
 	delete(b.subscribers, ch)
 	close(ch)
@@ -38,7 +39,7 @@ func (b *Broadcaster) Unsubscribe(ch chan *canbus.CanFrame) {
 }
 
 // Broadcast sends a frame to all subscribers.
-func (b *Broadcaster) Broadcast(frame *canbus.CanFrame) {
+func (b *CanFrameBroadcaster) Broadcast(frame *canbus.CanFrame) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	b.lock.RLock()
 	defer b.lock.RUnlock()
@@ -51,7 +52,7 @@ func (b *Broadcaster) Broadcast(frame *canbus.CanFrame) {
 	}
 }
 
-func (b *Broadcaster) Cleanup() {
+func (b *CanFrameBroadcaster) Cleanup() {
 	b.lock.Lock()
 	for channel := range b.subscribers {
 		delete(b.subscribers, channel)
