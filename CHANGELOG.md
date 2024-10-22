@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/KeesTucker/husk/compare/husk-v1.6.1...husk-v1.7.0) (2024-10-22)
+
+
+### Features
+
+* Added much more in depth UDS processing, with named services and subfunctions etc. Added UDS message struct and supporting functions. todo: make acks an entire can frame that gets sent across serial and broadcast them. ([a1b967f](https://github.com/KeesTucker/husk/commit/a1b967fbc592407c60c158c2f6e62c36c47450aa))
+
+
+### Bug Fixes
+
+* bugfix so that ecu id reads don't block ([07463b0](https://github.com/KeesTucker/husk/commit/07463b0b8eab1d6a62b9c9a7ddf836b00a9b6dbc))
+* ecu read identification now actually completes successfully, in the process fixed a bunch of bugs. ([efe1b82](https://github.com/KeesTucker/husk/commit/efe1b822eea672c08276e968fa0e539d8adb9036))
+* very hacky fixes to get it to connect to my ecu! but it works! need to go back and make proper fixes. ([26bcaa7](https://github.com/KeesTucker/husk/commit/26bcaa7e492f6c5471a5847eb0615457aca6ad5d))
+
 ## [1.6.1](https://github.com/KeesTucker/husk/compare/husk-v1.6.0...husk-v1.6.1) (2024-10-20)
 
 
