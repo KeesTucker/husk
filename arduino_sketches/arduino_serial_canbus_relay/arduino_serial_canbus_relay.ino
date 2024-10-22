@@ -15,7 +15,7 @@ struct can_frame txFrame;
 
 const int MAX_RETRIES = 3; // Maximum number of retries
 const unsigned long READ_TIMEOUT_MS = 5; 
-const unsigned long ACK_TIMEOUT_MS = 500; 
+const unsigned long ACK_TIMEOUT_MS = 100; 
 const unsigned long RETRY_DELAY_MS = 200; 
 
 void setup() {

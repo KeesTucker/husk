@@ -26,7 +26,7 @@ const (
 	ArduinoMaxRetries               = 3
 	ArduinoPortOpenDelay            = 500 * time.Millisecond
 	ArduinoReadTimeout              = 5 * time.Millisecond
-	ArduinoACKTimeout               = 500 * time.Millisecond
+	ArduinoACKTimeout               = 100 * time.Millisecond
 	ArduinoRetryDelay               = 200 * time.Millisecond
 	ArduinoExponentialBackoffFactor = 2
 )
@@ -170,6 +170,11 @@ func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *canbus.CanFrame) e
 		return fmt.Errorf("driver is not running")
 	}
 
+	// Don't log tester present. TODO: handle this in a more dynamic way in future. Possibly with filters in the GUI
+	if frame.Data[1] != 0x3E {
+		fmt.Printf("send: %s\n", frame.String())
+	}
+
 	frameBytes := d.createFrameBytes(frame)
 	ackReceived := false
 	retryDelay := ArduinoRetryDelay
@@ -242,6 +247,7 @@ func (d *ArduinoDriver) assembleFramesFromSerial(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+			byteBuffer[0] = 0x00 // Reset byte buffer so we don't forever read the same byte over and over
 			n, err := d.port.Read(byteBuffer)
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, errorPortHasBeenClosed) {
@@ -281,7 +287,6 @@ func (d *ArduinoDriver) assembleFramesFromSerial(ctx context.Context) {
 			case b == ArduinoEndMarker && inFrame:
 				// End of the current frame
 				inFrame = false
-				fmt.Println(buffer)
 				// Send the unstuffed frame to readChan
 				select {
 				case d.readChan <- buffer:
@@ -339,7 +344,6 @@ func (d *ArduinoDriver) processAndBroadcastFrames(ctx context.Context) {
 				continue
 			}
 			if frame != nil {
-				l.WriteToLog(fmt.Sprintf("Received: %s", frame.String()))
 				d.frameBroadcaster.Broadcast(frame)
 			}
 		}
@@ -401,6 +405,9 @@ func (d *ArduinoDriver) readFrame(ctx context.Context) (*canbus.CanFrame, error)
 			return nil, fmt.Errorf("failed to send ACK: %s", err.Error())
 		}
 
+		if frame.Data[1] != 0x7E {
+			fmt.Printf("read: %s\n", frame.String())
+		}
 		return frame, nil
 
 	case <-ctx.Done():

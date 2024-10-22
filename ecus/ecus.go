@@ -22,6 +22,14 @@ type ECUProcessor interface {
 	Cleanup()
 }
 
+type ECUId struct {
+	hardwareId   string
+	softwareId   string
+	manufacturer string
+	model        string
+	vin          string
+}
+
 var (
 	availableECUs            []ECUProcessor
 	availableECUIds          []string
@@ -39,9 +47,9 @@ func ScanForECUs(ctx context.Context) {
 	availableECUs = ScanKTM16To20(ctx, availableECUs)
 	availableECUIds = make([]string, len(availableECUs))
 	ecuIdToECU = make(map[string]ECUProcessor)
-	for i, driver := range availableECUs {
-		availableECUIds[i] = driver.String()
-		ecuIdToECU[driver.String()] = driver
+	for i, ecu := range availableECUs {
+		availableECUIds[i] = ecu.String()
+		ecuIdToECU[ecu.String()] = ecu
 	}
 	scanEvent(availableECUIds)
 	if len(availableECUIds) == 0 {

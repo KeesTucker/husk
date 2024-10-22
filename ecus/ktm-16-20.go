@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,9 +16,10 @@ import (
 
 // KTM16To20 Covers all KTM & Husqvarna 690 models from 2016 to 2020.
 // Support for additional models/years will come soon
+
 type ProcessorKTM16To20 struct {
 	isRunning          int32 // Use int32 for atomic operations
-	id                 string
+	identification     *ECUId
 	messageBroadcaster *uds.MessageBroadcaster
 	wg                 sync.WaitGroup
 	cancelFunc         context.CancelFunc
@@ -25,15 +27,30 @@ type ProcessorKTM16To20 struct {
 
 const (
 	TesterPresentDelayKTM16To20 = 2 * time.Second
-	ReadTimeoutKTM16To20        = 10 * time.Second
+	ReadTimeoutKTM16To20        = 5 * time.Second
+	ECUScanTimeoutKTM16To20     = 30 * time.Second
 )
+
+var CompatibleECUHardwareIdsKTM16To20 = []string{
+	"613.41.031.300",
+}
+
+var CompatibleECUSoftwareIdsKTM16To20 = []string{
+	"KM2A0EU17H0631",
+}
+
+var CompatibleModelsKTM16To20 = []string{
+	"FE/FS 701",
+}
 
 func (e *ProcessorKTM16To20) GetTesterId() uint16 {
 	return uds.TesterID
 }
+
 func (e *ProcessorKTM16To20) GetECUId() uint16 {
 	return uds.ECUID
 }
+
 func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	// Create a temporary instance of the processor
@@ -54,49 +71,70 @@ func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 	defer tempProcessor.Cleanup()
 	// Attempt to communicate with the ECU
 	l.WriteToLog("Scanning for 2016 to 2020 KTM/Husqvarna")
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, ECUScanTimeoutKTM16To20)
 	defer cancel()
-	// Send ECU identification request
-	id, err := tempProcessor.readECUIdentification(ctx)
+
+	err = uds.SendTesterPresent(ctx)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Failed to read identification from ECU: %v", err))
+		l.WriteToLog(fmt.Sprintf("Failed to send tester present: %v", err))
+		return nil
+	}
+
+	// Make sure we get a valid response after sending tester preset.
+	service := uds.ServiceTesterPresent
+	_, err = tempProcessor.ReadMessage(ctx, &service, nil)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("Failed to get tester present response: %v", err))
+		return nil
+	}
+
+	l.WriteToLog("Communication established\n")
+	// Send ECU identification request
+	identification, err := tempProcessor.scanEcu(ctx)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("No compatible ECU detected: %v", err))
 		return nil
 	}
 	// Create a fresh ecu processor instance and return that so it can be registered at the user's leisure
 	e := &ProcessorKTM16To20{}
-	e.id = id
+	e.identification = &identification
 	ecus = append(ecus, e)
 	return ecus
 }
 
 // String returns the id of the ECU
 func (e *ProcessorKTM16To20) String() string {
-	return fmt.Sprintf("ECU: %s", e.id)
+	return fmt.Sprintf("%s %s ECU: %s", e.identification.manufacturer, e.identification.model, e.identification.hardwareId)
 }
+
 func (e *ProcessorKTM16To20) Register() (ECUProcessor, error) {
 	services.Register(services.ServiceECU, e)
 	e.messageBroadcaster = uds.NewUDSMessageBroadcaster()
 	return e, nil
 }
+
 func (e *ProcessorKTM16To20) Start(ctx context.Context) (ECUProcessor, error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	// Create a cancellable context
-	ctx, e.cancelFunc = context.WithCancel(ctx)
+	ecuCtx, cancelFunc := context.WithCancel(ctx)
+	e.cancelFunc = cancelFunc
 	// Mark the driver as running
 	atomic.StoreInt32(&e.isRunning, 1)
 	// Start the main loops
 	e.wg.Add(2)
-	go e.testerPresentLoop(ctx)
-	go e.processAndBroadcastUDSMessages(ctx)
+	go e.testerPresentLoop(ecuCtx)
+	go e.processAndBroadcastUDSMessages(ecuCtx)
 	l.WriteToLog("ECU processor running")
 	return e, nil
 }
+
 func (e *ProcessorKTM16To20) SubscribeReadMessages() (chan *uds.Message, error) {
 	if atomic.LoadInt32(&e.isRunning) == 0 {
 		return nil, fmt.Errorf("can't subscribe to messages, ecu is not connected")
 	}
 	return e.messageBroadcaster.Subscribe(), nil
 }
+
 func (e *ProcessorKTM16To20) UnsubscribeReadMessages(ch chan *uds.Message) {
 	if e.messageBroadcaster != nil {
 		e.messageBroadcaster.Unsubscribe(ch)
@@ -121,6 +159,7 @@ func (e *ProcessorKTM16To20) Cleanup() {
 	// Wait for all goroutines to finish
 	e.wg.Wait()
 }
+
 func (e *ProcessorKTM16To20) SendMessage(ctx context.Context, data []byte) error {
 	if atomic.LoadInt32(&e.isRunning) == 0 {
 		return fmt.Errorf("can't send message ecu is not connected")
@@ -188,12 +227,15 @@ func (e *ProcessorKTM16To20) processAndBroadcastUDSMessages(ctx context.Context)
 				continue
 			}
 			if message != nil {
-				l.WriteToLog(message.String())
+				if message.ServiceID != uds.ServiceTesterPresent {
+					l.WriteToLog(fmt.Sprintf("Read: %s\n", message.String()))
+				}
 				e.messageBroadcaster.Broadcast(message)
 			}
 		}
 	}
 }
+
 func (e *ProcessorKTM16To20) testerPresentLoop(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	defer e.wg.Done()
@@ -210,24 +252,85 @@ func (e *ProcessorKTM16To20) testerPresentLoop(ctx context.Context) {
 		time.Sleep(TesterPresentDelayKTM16To20)
 	}
 }
-func (e *ProcessorKTM16To20) readECUIdentification(ctx context.Context) (result string, err error) {
-	for subfunction := byte(0x01); subfunction <= byte(0x08); subfunction++ {
-		message := &uds.Message{
-			SenderID:    uds.TesterID,
-			ServiceID:   uds.ServiceReadIdKTM16To20,
-			Subfunction: &subfunction,
-		}
-		err = message.Send(ctx)
-		if err != nil {
-			return "", err
-		}
-		serviceId := uds.ServiceReadIdKTM16To20
-		message, err = e.ReadMessage(ctx, &serviceId, &subfunction)
-		if err != nil {
-			return "", err
-		}
-		fmt.Println(message.ASCIIRepresentation())
-		result += message.ASCIIRepresentation() + "\n"
+
+func (e *ProcessorKTM16To20) scanEcu(ctx context.Context) (identification ECUId, err error) {
+	// Check hardware ID
+	serviceId := uds.ServiceReadIdKTM16To20
+	subfunction := uds.SubfunctionReadECUHardwareIdKTM16To20
+	req := &uds.Message{
+		SenderID:    uds.TesterID,
+		ServiceID:   serviceId,
+		Subfunction: &subfunction,
 	}
-	return result, nil
+	err = req.Send(ctx)
+	if err != nil {
+		return
+	}
+	resp, err := e.ReadMessage(ctx, &serviceId, &subfunction)
+	if err != nil {
+		return
+	}
+	if !slices.Contains(CompatibleECUHardwareIdsKTM16To20, resp.ASCIIRepresentation()) {
+		return identification, fmt.Errorf("incompatible hardware ID: %s", resp.ASCIIRepresentation())
+	}
+	identification.hardwareId = resp.ASCIIRepresentation()
+
+	// Check software ID
+	subfunction = uds.SubfunctionReadECUSoftwareIdKTM16To20
+	req.Subfunction = &subfunction
+	err = req.Send(ctx)
+	if err != nil {
+		return
+	}
+	resp, err = e.ReadMessage(ctx, &serviceId, &subfunction)
+	if err != nil {
+		return
+	}
+	if !slices.Contains(CompatibleECUSoftwareIdsKTM16To20, resp.ASCIIRepresentation()) {
+		return identification, fmt.Errorf("incompatible software ID: %s", resp.ASCIIRepresentation())
+	}
+	identification.softwareId = resp.ASCIIRepresentation()
+
+	// Check model
+	subfunction = uds.SubfunctionReadModelKTM16To20
+	req.Subfunction = &subfunction
+	err = req.Send(ctx)
+	if err != nil {
+		return
+	}
+	resp, err = e.ReadMessage(ctx, &serviceId, &subfunction)
+	if err != nil {
+		return
+	}
+	if !slices.Contains(CompatibleModelsKTM16To20, resp.ASCIIRepresentation()) {
+		return identification, fmt.Errorf("incompatible model: %s", resp.ASCIIRepresentation())
+	}
+	identification.model = resp.ASCIIRepresentation()
+
+	// Get VIN
+	subfunction = uds.SubfunctionReadVINKTM16To20
+	req.Subfunction = &subfunction
+	err = req.Send(ctx)
+	if err != nil {
+		return
+	}
+	resp, err = e.ReadMessage(ctx, &serviceId, &subfunction)
+	if err != nil {
+		return
+	}
+	identification.vin = resp.ASCIIRepresentation()
+
+	// Get manufacturer
+	subfunction = uds.SubfunctionReadManufacturerKTM16To20
+	req.Subfunction = &subfunction
+	err = req.Send(ctx)
+	if err != nil {
+		return
+	}
+	resp, err = e.ReadMessage(ctx, &serviceId, &subfunction)
+	if err != nil {
+		return
+	}
+	identification.manufacturer = resp.ASCIIRepresentation()
+	return
 }

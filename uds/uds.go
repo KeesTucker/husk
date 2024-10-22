@@ -12,17 +12,38 @@ import (
 	"husk/services"
 )
 
-const frameWaitTimeout = 10 * time.Second
+// wait 5 seconds between consecutive frames before timing out
+const frameWaitTimeout = 5 * time.Second
+
+// 10 millisecond tester separation time
+const testerSeparationTime byte = 0x10
+
 const (
+	// PCIFrameTypeSF represents a Single Frame.
+	// Used when the entire UDS message fits within a single CAN frame.
 	PCIFrameTypeSF byte = 0x0
+
+	// PCIFrameTypeFF represents a First Frame.
+	// Indicates the start of a multi-frame UDS message. The First Frame contains
+	// the initial part of the data and specifies the total length of the complete message.
 	PCIFrameTypeFF byte = 0x1
+
+	// PCIFrameTypeCF represents a Consecutive Frame.
+	// Used for sending subsequent parts of a multi-frame UDS message after the First Frame.
+	// Each Consecutive Frame continues the data transmission until the entire message is sent.
 	PCIFrameTypeCF byte = 0x2
+
+	// PCIFrameTypeFC represents a Flow Control Frame.
+	// This frame is sent by the receiver (e.g., ECU) to control the flow of Consecutive Frames.
+	// It manages the pacing of data transmission to prevent buffer overruns.
 	PCIFrameTypeFC byte = 0x3
 )
+
 const (
 	TesterID uint16 = 0x7E0
 	ECUID    uint16 = 0x7E8
 )
+
 const (
 	NegativeResponseByte            byte = 0x7F
 	PositiveResponseServiceIdOffset byte = 0x40
@@ -45,6 +66,7 @@ func SendTesterPresent(ctx context.Context) error {
 	}
 	return nil
 }
+
 func sendSingleFrame(ctx context.Context, id uint16, dataLength uint16, data []byte) error {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	frame := &canbus.CanFrame{ID: id}
@@ -59,6 +81,7 @@ func sendSingleFrame(ctx context.Context, id uint16, dataLength uint16, data []b
 	}
 	return nil
 }
+
 func sendFirstFrame(ctx context.Context, id uint16, dataLength uint16, data []byte) error {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	frame := &canbus.CanFrame{ID: id, DLC: 8}
@@ -70,6 +93,7 @@ func sendFirstFrame(ctx context.Context, id uint16, dataLength uint16, data []by
 	copy(frame.Data[2:], data[:6])
 	return d.SendFrame(ctx, frame)
 }
+
 func waitForFlowControlFrame(ctx context.Context) (separationTime byte, err error) {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	readCtx, cancel := context.WithTimeout(ctx, frameWaitTimeout)
@@ -92,6 +116,7 @@ func waitForFlowControlFrame(ctx context.Context) (separationTime byte, err erro
 		}
 	}
 }
+
 func sleepForSeparationTime(separationTime byte) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	if separationTime <= 0x7F {
@@ -106,6 +131,7 @@ func sleepForSeparationTime(separationTime byte) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
 func sendConsecutiveFrames(ctx context.Context, id uint16, data []byte, separationTime byte) error {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	frameIndex := byte(1) // Consecutive Frame index starts at 1
@@ -138,6 +164,7 @@ func sendConsecutiveFrames(ctx context.Context, id uint16, data []byte, separati
 	}
 	return nil
 }
+
 func Read(ctx context.Context) (*Message, error) {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	frameChan := d.SubscribeReadFrames()
@@ -169,6 +196,7 @@ func Read(ctx context.Context) (*Message, error) {
 		}
 	}
 }
+
 func receiveSingleFrame(frame *canbus.CanFrame) ([]byte, error) {
 	// Extract data length from the lower nibble of the PCI byte
 	dataLength := frame.Data[0] & 0x0F
@@ -177,6 +205,7 @@ func receiveSingleFrame(frame *canbus.CanFrame) ([]byte, error) {
 	copy(data, frame.Data[1:dataLength+1])
 	return data, nil
 }
+
 func receiveMultiFrame(ctx context.Context, firstFrame *canbus.CanFrame) ([]byte, error) {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	frameChan := d.SubscribeReadFrames()
@@ -194,7 +223,6 @@ func receiveMultiFrame(ctx context.Context, firstFrame *canbus.CanFrame) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("failed to send flow control frame: %v", err)
 	}
-	fmt.Println("sending flow control frame")
 	var cancel context.CancelFunc
 	for bytesReceived < int(dataLength) {
 		var readCtx context.Context
@@ -233,13 +261,14 @@ func receiveMultiFrame(ctx context.Context, firstFrame *canbus.CanFrame) ([]byte
 	cancel()
 	return data, nil
 }
+
 func sendFlowControlFrame() error {
 	d := services.Get(services.ServiceDriver).(drivers.Driver)
 	// Construct the FC frame data
 	fcFrameData := [8]byte{}
 	fcFrameData[0] = (PCIFrameTypeFC << 4) | 0x00 // Flow Status: Continue to send (CTS)
 	fcFrameData[1] = 0x00                         // Block Size (BS): 0 means sender can send all CFs without waiting for further FCs
-	fcFrameData[2] = 0x00                         // Separation Time (STmin): 0 means minimum separation time
+	fcFrameData[2] = testerSeparationTime         // Separation Time: 0 means minimum separation time
 	// Create the CAN frame
 	fcFrame := &canbus.CanFrame{
 		ID:   TesterID,

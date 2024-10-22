@@ -8,10 +8,10 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"husk/canbus"
 	"husk/drivers"
 	"husk/ecus"
 	"husk/services"
+	"husk/utils"
 )
 
 const (
@@ -145,7 +145,7 @@ func (g *GUI) WriteToLog(in string) {
 func (g *GUI) sendManualFrame(ctx context.Context) {
 	e := services.Get(services.ServiceECU).(ecus.ECUProcessor)
 	if g.manualFrameEntry.Text != "" {
-		data, err := canbus.StringToFrameData(g.manualFrameEntry.Text)
+		data, err := utils.HexStringToByteArray(g.manualFrameEntry.Text)
 		if err != nil {
 			g.WriteToLog(fmt.Sprintf("error: parsing frame: %s\n", err.Error()))
 			return

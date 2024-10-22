@@ -81,19 +81,17 @@ var subfunctionNames = map[byte]map[byte]string{
 		SubfunctionDTCSettingOff: "DTC Setting Off",
 	},
 	ServiceReadIdKTM16To20: {
-		SubfunctionReadVINKTM16To20:          "Read VIN",
-		SubfunctionReadVersionKTM16To20:      "Read ECU Version",
-		SubfunctionReadUnknownID1KTM16To20:   "Read UNKNOWN ID 1",
-		SubfunctionReadUnknownID2KTM16To20:   "Read UNKNOWN ID 2",
-		SubfunctionReadEngineNumberKTM16To20: "Read Engine Number",
-		SubfunctionReadCountryKTM16To20:      "Read Manufacturer Country Code",
-		SubfunctionReadBrandKTM16To20:        "Read Brand",
-		SubfunctionReadModelKTM16To20:        "Read Model",
+		SubfunctionReadVINKTM16To20:           "Read VIN",
+		SubfunctionReadECUHardwareIdKTM16To20: "Read ECU Hardware Id",
+		SubfunctionReadECUSoftwareIdKTM16To20: "Read ECU Software Id",
+		SubfunctionReadCountryKTM16To20:       "Read Manufacturer Country Code",
+		SubfunctionReadManufacturerKTM16To20:  "Read Brand",
+		SubfunctionReadModelKTM16To20:         "Read Model",
 	},
 }
 
 func (m *Message) SubfunctionLabel() string {
-	if m.Subfunction != nil {
+	if m.Subfunction == nil {
 		return "N/A"
 	}
 	if subMap, exists := subfunctionNames[m.ServiceID]; exists {
