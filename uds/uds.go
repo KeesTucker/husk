@@ -127,7 +127,7 @@ func sleepForSeparationTime(separationTime byte) {
 		microseconds := 100 * (int(separationTime) - 0xF0)
 		time.Sleep(time.Duration(microseconds) * time.Microsecond)
 	} else {
-		l.WriteToLog("Invalid separation time received, setting separation time to 10 milliseconds")
+		l.WriteToLog("Invalid separation time received, setting separation time to 10 milliseconds", logging.LogTypeLog)
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -180,13 +180,13 @@ func Read(ctx context.Context) (*Message, error) {
 				if err != nil {
 					return nil, err
 				}
-				return RawDataToMessage(frame.ID, rawData), nil
+				return RawDataToMessage(frame.ID, rawData, true), nil
 			case PCIFrameTypeFF:
 				rawData, err := receiveMultiFrame(ctx, frame)
 				if err != nil {
 					return nil, err
 				}
-				return RawDataToMessage(frame.ID, rawData), nil
+				return RawDataToMessage(frame.ID, rawData, true), nil
 			default:
 				// Ignore frames that don't match expected types
 				continue

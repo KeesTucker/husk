@@ -12,33 +12,57 @@ import (
 
 // Message represents a full UDS message with an optional Subfunction and NRC.
 type Message struct {
-	SenderID    uint16 // The ID of the sender (CAN ID)
-	ServiceID   byte   // The UDS ServiceID (deduced from the byte array)
-	Subfunction *byte  // Optional Subfunction (nil if not applicable)
-	NRC         *byte  // Optional Negative Response Code (NRC) for negative responses
-	Data        []byte // The full byte array of data (excluding ServiceID, Subfunction, and NRC)
-	// TODO: IsSuccess is not a good indicator of request or response, add something for that
-	IsSuccess *bool // Indicates if the message was successful
+	// SenderID is the CAN ID of the sender
+	SenderID uint16
+	// ServiceID is the UDS ServiceID
+	ServiceID byte
+	// Subfunction is optional UDS Subfunction
+	Subfunction *byte
+	// NRC is the Negative Response Code (NRC) for negative responses
+	NRC *byte
+	// Data is the full byte array of data (excluding ServiceID, and NRC)
+	Data []byte
+	// IsResponse indicates if the message was a response or a request
+	IsResponse bool
+	// IsPositive indicates if the message was successful
+	IsPositive *bool
 }
 
 // RawDataToMessage creates a new UDSMessage instance by deducing the service ID, subfunction, and NRC from a byte array.
-func RawDataToMessage(senderID uint16, rawData []byte) *Message {
+func RawDataToMessage(senderID uint16, rawData []byte, isResponse bool) *Message {
 	if len(rawData) == 0 {
 		return nil // Handle cases where the data is empty
 	}
-	serviceId := rawData[0] - PositiveResponseServiceIdOffset
-	isSuccess := rawData[0] != NegativeResponseByte
+
+	var isPositive bool   // Was response positive?
+	var serviceId byte    // Service id of uds message
 	var subfunction *byte // Optional subfunction, usually the second byte
 	var nrc *byte         // Optional NRC for negative responses
-	data := rawData[1:]   // The remaining data, excluding the service ID
-	// If it's a negative response, adjust the service ID and extract the NRC
-	if !isSuccess && len(data) > 1 {
-		serviceId = data[0]
-		nrc = &data[1]  // The third byte is the NRC
-		data = data[2:] // Remove the service ID and NRC from the data array
-	} else if len(data) > 0 {
-		// If the message includes a subfunction, extract it
-		subfunction = &data[0]
+
+	var data []byte
+	if isResponse {
+		// This is a response
+		// Was response positive or negative?
+		isPositive = rawData[0] != NegativeResponseByte
+
+		if isPositive {
+			serviceId = rawData[0] - PositiveResponseServiceIdOffset // Subtract positive response offset from first byte to get service id
+			if len(rawData) > 1 {
+				subfunction = &rawData[1] // The subfunction is the second byte of response
+			}
+			data = rawData[1:] // Strip service id and store in data slice
+		} else {
+			serviceId = rawData[1] // The service id is the second byte if response is negative
+			nrc = &rawData[2]      // The third byte is the NRC
+			data = rawData[3:]     // Strip negative response byte, service id and nrc and store in data slice
+		}
+	} else {
+		// This is a request
+		serviceId = rawData[0] // Service id is the first byte of request
+		if len(rawData) > 1 {
+			subfunction = &rawData[1] // Subfunction is the second byte of request
+		}
+		data = rawData[1:] // Strip service id and store in data slice
 	}
 	return &Message{
 		SenderID:    senderID,
@@ -46,14 +70,14 @@ func RawDataToMessage(senderID uint16, rawData []byte) *Message {
 		Subfunction: subfunction,
 		NRC:         nrc,
 		Data:        data,
-		IsSuccess:   &isSuccess,
+		IsPositive:  &isPositive,
+		IsResponse:  isResponse,
 	}
 }
 
 func (m *Message) ToRawData() []byte {
 	var rawData []byte
-	if m.IsSuccess == nil {
-		// Treat this as an outgoing request since IsSuccess is nil
+	if !m.IsResponse {
 		// Outgoing Request Handling
 		rawData = append(rawData, m.ServiceID)
 		// Include Subfunction if present.
@@ -64,7 +88,7 @@ func (m *Message) ToRawData() []byte {
 		rawData = append(rawData, m.Data...)
 		return rawData
 	}
-	if *m.IsSuccess {
+	if *m.IsPositive {
 		// Positive Response Handling
 		// The first byte is the original Service ID plus the positive response offset (0x40).
 		positiveServiceID := m.ServiceID + PositiveResponseServiceIdOffset
@@ -102,7 +126,7 @@ func (m *Message) Send(ctx context.Context) error {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
 	if m.ServiceID != ServiceTesterPresent {
-		l.WriteToLog(fmt.Sprintf("Send: %s\n", m.String()))
+		l.WriteToLog(m.String(), logging.LogTypeProtocolLog)
 	}
 
 	rawData := m.ToRawData()
@@ -144,10 +168,13 @@ func (m *Message) String() string {
 	if dataStr == "" {
 		dataStr = "N/A"
 	}
-	if m.IsSuccess == nil || *m.IsSuccess {
-		return fmt.Sprintf("Id: %s Service: %s Subfunction: %s ASCII: %s Data: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
+	if !m.IsResponse {
+		return fmt.Sprintf("Request: Id: %s, Service: %s, Subfunction: %s, ASCII: %s, Data: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
 	}
-	return fmt.Sprintf("Id: %s (-) Service: %s NRC: %s", m.SenderLabel(), m.ServiceLabel(), m.NRCLabel())
+	if *m.IsPositive {
+		return fmt.Sprintf("Response: Id: %s, Service: %s, Subfunction: %s, ASCII: %s, Data: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
+	}
+	return fmt.Sprintf("Negative Response: Id: %s, Service: %s, NRC: %s", m.SenderLabel(), m.ServiceLabel(), m.NRCLabel())
 }
 
 // ASCIIRepresentation returns the alphanumeric ASCII string representation of the message data.

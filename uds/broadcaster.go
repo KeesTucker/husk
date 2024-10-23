@@ -46,10 +46,11 @@ func (b *MessageBroadcaster) Broadcast(message *Message) {
 		select {
 		case ch <- message:
 		default:
-			l.WriteToLog("Error: slow subscriber, message channel is full. dropping message.")
+			l.WriteToLog("Error: slow subscriber, message channel is full. dropping message.", logging.LogTypeLog)
 		}
 	}
 }
+
 func (b *MessageBroadcaster) Cleanup() {
 	b.lock.Lock()
 	for channel := range b.subscribers {

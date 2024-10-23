@@ -8,10 +8,20 @@ import (
 )
 
 type Logger struct {
-	bufferedLog string
+	bufferedProtocolLog []string
+	bufferedCanbusLog   []string
+	bufferedLog         []string
 }
 
-type LogSubFunc func(string)
+type LogSubFunc func(message string, logType LogType)
+
+type LogType int
+
+const (
+	LogTypeProtocolLog LogType = iota
+	LogTypeCanbusLog
+	LogTypeLog
+)
 
 const (
 	logRefreshRate = 64
@@ -38,11 +48,19 @@ func (l *Logger) AddLogSub(subFunc LogSubFunc) *Logger {
 	return l
 }
 
-// WriteToLog writes to both the gui log and the console
-func (l *Logger) WriteToLog(message string) {
-	l.bufferedLog += message + "\n"
+// WriteToLog writes to the appropriate log buffer
+func (l *Logger) WriteToLog(message string, logType LogType) {
+	switch logType {
+	case LogTypeProtocolLog:
+		l.bufferedProtocolLog = append(l.bufferedProtocolLog, message)
+	case LogTypeCanbusLog:
+		l.bufferedCanbusLog = append(l.bufferedCanbusLog, message)
+	case LogTypeLog:
+		l.bufferedLog = append(l.bufferedLog, message)
+	}
 }
 
+// displayLogLoop manages the log refresh and ensures protocol and canbus logs remain in sync
 func (l *Logger) displayLogLoop(ctx context.Context) {
 	for {
 		select {
@@ -50,12 +68,22 @@ func (l *Logger) displayLogLoop(ctx context.Context) {
 			return
 		default:
 			time.Sleep(logRefreshDelay)
-
 			for _, subscriber := range logSubscribers {
-				subscriber(l.bufferedLog)
+				for _, log := range l.bufferedProtocolLog {
+					subscriber(log, LogTypeProtocolLog)
+				}
+				for _, log := range l.bufferedCanbusLog {
+					subscriber(log, LogTypeCanbusLog)
+				}
+				for _, log := range l.bufferedLog {
+					subscriber(log, LogTypeLog)
+				}
 			}
 
-			l.bufferedLog = ""
+			// Clear logs after refreshing
+			l.bufferedProtocolLog = nil
+			l.bufferedCanbusLog = nil
+			l.bufferedLog = nil
 		}
 	}
 }

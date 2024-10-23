@@ -25,13 +25,12 @@ func main() {
 	// Start a separate goroutine to listen for OS signals to handle shutdown gracefully
 	go func() {
 		<-signalChan
-		l.WriteToLog("Received shutdown signal, canceling context and cleaning up")
+		l.WriteToLog("Received shutdown signal, canceling context and cleaning up", logging.LogTypeLog)
 		cancel()
 	}()
 
 	// Register GUI and sub to logger
 	g := gui.RegisterGUI()
-	l.AddLogSub(g.WriteToLog)
 	// Start logger (this will block)
 	g.Start(ctx)
 }

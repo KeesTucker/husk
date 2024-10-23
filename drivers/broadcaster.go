@@ -47,10 +47,11 @@ func (b *CanFrameBroadcaster) Broadcast(frame *canbus.CanFrame) {
 		select {
 		case ch <- frame:
 		default:
-			l.WriteToLog("Error: slow subscriber, frame channel is full. dropping frame.")
+			l.WriteToLog("Error: slow subscriber, frame channel is full. dropping frame.", logging.LogTypeLog)
 		}
 	}
 }
+
 func (b *CanFrameBroadcaster) Cleanup() {
 	b.lock.Lock()
 	for channel := range b.subscribers {

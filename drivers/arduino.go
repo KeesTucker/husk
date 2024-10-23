@@ -85,21 +85,21 @@ func (d *ArduinoDriver) Register() (Driver, error) {
 	mode := &serial.Mode{BaudRate: ArduinoBaudRate}
 	d.port, err = serial.Open(d.portName, mode)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: opening port: %s", err.Error()))
+		l.WriteToLog(fmt.Sprintf("Error: opening port: %s", err.Error()), logging.LogTypeLog)
 		return nil, err
 	}
 
 	// Set read timeout
 	err = d.port.SetReadTimeout(ArduinoReadTimeout)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: setting read timeout: %s", err.Error()))
+		l.WriteToLog(fmt.Sprintf("Error: setting read timeout: %s", err.Error()), logging.LogTypeLog)
 		return nil, err
 	}
 
 	// Register the driver after successful initialization
 	services.Register(services.ServiceDriver, d)
 
-	l.WriteToLog(fmt.Sprintf("Arduino connected on port %s", d.portName))
+	l.WriteToLog(fmt.Sprintf("Arduino connected on port %s", d.portName), logging.LogTypeLog)
 	return d, nil
 }
 
@@ -119,7 +119,7 @@ func (d *ArduinoDriver) Start(ctx context.Context) (Driver, error) {
 	go d.processAndBroadcastFrames(ctx)
 	go d.writeFramesToSerial(ctx)
 
-	l.WriteToLog("Arduino driver running")
+	l.WriteToLog("Arduino driver running", logging.LogTypeLog)
 	return d, nil
 }
 
@@ -154,9 +154,9 @@ func (d *ArduinoDriver) Cleanup() {
 	if d.port != nil {
 		err := d.port.Close()
 		if err != nil {
-			l.WriteToLog(fmt.Sprintf("Error: closing port: %s", err.Error()))
+			l.WriteToLog(fmt.Sprintf("Error: closing port: %s", err.Error()), logging.LogTypeLog)
 		} else {
-			l.WriteToLog("Serial port closed successfully")
+			l.WriteToLog("Serial port closed successfully", logging.LogTypeLog)
 		}
 	}
 }
@@ -172,7 +172,7 @@ func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *canbus.CanFrame) e
 
 	// Don't log tester present. TODO: handle this in a more dynamic way in future. Possibly with filters in the GUI
 	if frame.Data[1] != 0x3E {
-		fmt.Printf("send: %s\n", frame.String())
+		l.WriteToLog(fmt.Sprintf("Send: %s", frame.String()), logging.LogTypeCanbusLog)
 	}
 
 	frameBytes := d.createFrameBytes(frame)
@@ -188,7 +188,7 @@ func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *canbus.CanFrame) e
 		}
 
 		if retries > 0 {
-			l.WriteToLog(fmt.Sprintf("Sent frame: %v (attempt %d)", frameBytes, retries+1))
+			l.WriteToLog(fmt.Sprintf("Retrying send frame: %v (attempt %d)", frameBytes, retries+1), logging.LogTypeLog)
 		}
 
 		// Wait for ACK or NACK
@@ -197,16 +197,16 @@ func (d *ArduinoDriver) SendFrame(ctx context.Context, frame *canbus.CanFrame) e
 			if ackReceived {
 				return nil
 			}
-			l.WriteToLog("NACK received from Arduino")
+			l.WriteToLog("NACK received from Arduino", logging.LogTypeLog)
 		case <-time.After(ArduinoACKTimeout):
-			l.WriteToLog("ACK timeout")
+			l.WriteToLog("ACK timeout", logging.LogTypeLog)
 		case <-ctx.Done():
 			return fmt.Errorf("operation cancelled")
 		}
 
 		if !ackReceived {
 			// Retry after a delay with exponential backoff
-			l.WriteToLog(fmt.Sprintf("ACK not received, retrying in %d milliseconds", retryDelay.Milliseconds()))
+			l.WriteToLog(fmt.Sprintf("ACK not received, retrying in %d milliseconds", retryDelay.Milliseconds()), logging.LogTypeLog)
 			time.Sleep(retryDelay)
 			retryDelay *= ArduinoExponentialBackoffFactor
 		}
@@ -251,11 +251,11 @@ func (d *ArduinoDriver) assembleFramesFromSerial(ctx context.Context) {
 			n, err := d.port.Read(byteBuffer)
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, errorPortHasBeenClosed) {
-					l.WriteToLog("Serial port has been closed")
+					l.WriteToLog("Serial port has been closed", logging.LogTypeLog)
 					d.cancelFunc()
 					return
 				}
-				l.WriteToLog(fmt.Sprintf("Error: reading from port: %s", err.Error()))
+				l.WriteToLog(fmt.Sprintf("Error: reading from port: %s", err.Error()), logging.LogTypeLog)
 				atomic.StoreInt32(&d.isRunning, 0)
 				d.cancelFunc()
 				return
@@ -273,7 +273,7 @@ func (d *ArduinoDriver) assembleFramesFromSerial(ctx context.Context) {
 				case d.ackChan <- ackByteToBool(b):
 					// Successfully sent ACK/NACK
 				default:
-					l.WriteToLog("ackChan is full, dropping ACK/NACK")
+					l.WriteToLog("ackChan is full, dropping ACK/NACK", logging.LogTypeLog)
 				}
 				continue
 			}
@@ -299,14 +299,14 @@ func (d *ArduinoDriver) assembleFramesFromSerial(ctx context.Context) {
 				n, err = d.port.Read(byteBuffer)
 				if err != nil {
 					if err != io.EOF {
-						l.WriteToLog(fmt.Sprintf("Rrror: reading from port after escape character: %s", err.Error()))
+						l.WriteToLog(fmt.Sprintf("Rrror: reading from port after escape character: %s", err.Error()), logging.LogTypeLog)
 					}
 					continue
 				}
 				if n > 0 {
 					unstuffedByte, err := d.unstuffByte(byteBuffer[0])
 					if err != nil {
-						l.WriteToLog(err.Error())
+						l.WriteToLog(err.Error(), logging.LogTypeLog)
 						// Discard the entire frame if invalid escape sequence
 						inFrame = false
 						buffer = buffer[:0]
@@ -332,7 +332,7 @@ func (d *ArduinoDriver) processAndBroadcastFrames(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			l.WriteToLog("Stopping CAN bus frame processing due to context cancellation")
+			l.WriteToLog("Stopping CAN bus frame processing due to context cancellation", logging.LogTypeLog)
 			return
 		default:
 			frame, err := d.readFrame(ctx)
@@ -340,10 +340,13 @@ func (d *ArduinoDriver) processAndBroadcastFrames(ctx context.Context) {
 				if errors.Is(ctx.Err(), context.Canceled) {
 					return
 				}
-				l.WriteToLog(err.Error())
+				l.WriteToLog(err.Error(), logging.LogTypeLog)
 				continue
 			}
 			if frame != nil {
+				if frame.Data[1] != 0x7E {
+					l.WriteToLog(fmt.Sprintf("Read: %s", frame.String()), logging.LogTypeCanbusLog)
+				}
 				d.frameBroadcaster.Broadcast(frame)
 			}
 		}
@@ -405,9 +408,6 @@ func (d *ArduinoDriver) readFrame(ctx context.Context) (*canbus.CanFrame, error)
 			return nil, fmt.Errorf("failed to send ACK: %s", err.Error())
 		}
 
-		if frame.Data[1] != 0x7E {
-			fmt.Printf("read: %s\n", frame.String())
-		}
 		return frame, nil
 
 	case <-ctx.Done():
@@ -434,7 +434,7 @@ func (d *ArduinoDriver) writeFramesToSerial(ctx context.Context) {
 			}
 			_, err := d.port.Write(frameBytes)
 			if err != nil {
-				l.WriteToLog(fmt.Sprintf("Error: writing to port: %s", err.Error()))
+				l.WriteToLog(fmt.Sprintf("Error: writing to port: %s", err.Error()), logging.LogTypeLog)
 				atomic.StoreInt32(&d.isRunning, 0)
 				d.cancelFunc()
 				return
@@ -530,7 +530,7 @@ func (d *ArduinoDriver) writeErrorResponse() {
 
 	err := d.sendResponse(ArduinoNACK)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: while trying to send NACK: %s", err.Error()))
+		l.WriteToLog(fmt.Sprintf("Error: while trying to send NACK: %s", err.Error()), logging.LogTypeLog)
 	}
 }
 
