@@ -20,6 +20,11 @@ const unsigned long RETRY_DELAY_MS = 200;
 
 void setup() {
     Serial.begin(921600);
+
+     // Initialize CAN controller
+    mcp2515.reset();
+    mcp2515.setBitrate(CAN_500KBPS);
+    mcp2515.setNormalMode();
 }
 
 void loop() {

@@ -28,7 +28,6 @@ type ProcessorKTM16To20 struct {
 const (
 	TesterPresentDelayKTM16To20 = 2 * time.Second
 	ReadTimeoutKTM16To20        = 5 * time.Second
-	ECUScanTimeoutKTM16To20     = 30 * time.Second
 )
 
 var CompatibleECUHardwareIdsKTM16To20 = []string{
@@ -71,8 +70,6 @@ func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 	defer tempProcessor.Cleanup()
 	// Attempt to communicate with the ECU
 	l.WriteToLog("Scanning for 2016 to 2020 KTM/Husqvarna", logging.LogTypeLog)
-	ctx, cancel := context.WithTimeout(ctx, ECUScanTimeoutKTM16To20)
-	defer cancel()
 
 	err = uds.SendTesterPresent(ctx)
 	if err != nil {
@@ -128,14 +125,14 @@ func (e *ProcessorKTM16To20) Start(ctx context.Context) (ECUProcessor, error) {
 	return e, nil
 }
 
-func (e *ProcessorKTM16To20) SubscribeReadMessages() (chan *uds.Message, error) {
+func (e *ProcessorKTM16To20) subscribeReadMessages() (chan *uds.Message, error) {
 	if atomic.LoadInt32(&e.isRunning) == 0 {
 		return nil, fmt.Errorf("can't subscribe to messages, ecu is not connected")
 	}
 	return e.messageBroadcaster.Subscribe(), nil
 }
 
-func (e *ProcessorKTM16To20) UnsubscribeReadMessages(ch chan *uds.Message) {
+func (e *ProcessorKTM16To20) unsubscribeReadMessages(ch chan *uds.Message) {
 	if e.messageBroadcaster != nil {
 		e.messageBroadcaster.Unsubscribe(ch)
 	}
@@ -160,14 +157,76 @@ func (e *ProcessorKTM16To20) Cleanup() {
 	e.wg.Wait()
 }
 
+func (e *ProcessorKTM16To20) ReadErrors(ctx context.Context) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	serviceId := uds.ServiceReadErrorsKTM16To20
+	req := &uds.Message{
+		SenderID:  uds.TesterID,
+		ServiceID: serviceId,
+	}
+	err := req.Send(ctx)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("Error: failed to send read error message: %v", err), logging.LogTypeLog)
+		return
+	}
+	resp, err := e.readMessage(ctx, &serviceId, nil)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("Error: failed to read read error response: %v", err), logging.LogTypeLog)
+		return
+	}
+	var dtcs []string
+	for i := 1; i < len(resp.Data); i += 2 {
+		// Convert each dtc to a string representing the dtc code
+		dtc := fmt.Sprintf("%02X%02X", resp.Data[i], resp.Data[i+1])
+		dtcs = append(dtcs, dtc)
+
+	}
+	if len(dtcs) > 0 {
+		result := "ERRORS:\n"
+		for _, dtc := range dtcs {
+			result += fmt.Sprintf("DTC: %s\n", uds.GetDTCLabel(dtc))
+		}
+		l.WriteToLog(result, logging.LogTypeLog)
+
+		return
+	}
+	l.WriteToLog("NO ERRORS FOUND", logging.LogTypeLog)
+}
+
+func (e *ProcessorKTM16To20) ClearErrors(ctx context.Context) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	serviceId := uds.ServiceClearErrorsKTM16To20
+	req := &uds.Message{
+		SenderID:  uds.TesterID,
+		ServiceID: serviceId,
+	}
+	err := req.Send(ctx)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("Error: failed to send clear error message: %v", err), logging.LogTypeLog)
+		return
+	}
+	_, err = e.readMessage(ctx, &serviceId, nil)
+	if err != nil {
+		l.WriteToLog(fmt.Sprintf("Error: failed to read clear error response: %v", err), logging.LogTypeLog)
+		return
+	}
+
+	l.WriteToLog("CLEARED ERRORS SUCCESSFULLY", logging.LogTypeLog)
+}
+
 // readMessage will read the next UDS message received. It will block by the specified read timeout and will filter based on serviceId and subfunction
 func (e *ProcessorKTM16To20) readMessage(ctx context.Context, serviceId *byte, subfunction *byte) (*uds.Message, error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
 	if atomic.LoadInt32(&e.isRunning) == 0 {
 		return nil, fmt.Errorf("can't read message ecu is not connected")
 	}
-	messageChan, _ := e.SubscribeReadMessages()
-	defer e.UnsubscribeReadMessages(messageChan)
+
+	messageChan, _ := e.subscribeReadMessages()
+	defer e.unsubscribeReadMessages(messageChan)
+
 	readCtx, cancel := context.WithTimeout(ctx, ReadTimeoutKTM16To20)
 	defer cancel()
 	for {

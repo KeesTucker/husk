@@ -3,7 +3,9 @@ package uds
 // Service IDs
 
 const (
-	ServiceReadIdKTM16To20 byte = 0x1A
+	ServiceReadIdKTM16To20      byte = 0x1A
+	ServiceReadErrorsKTM16To20  byte = 0x03
+	ServiceClearErrorsKTM16To20 byte = 0x04
 )
 
 // ReadId Subfunctions

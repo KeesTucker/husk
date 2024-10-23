@@ -345,6 +345,7 @@ func (d *ArduinoDriver) processAndBroadcastFrames(ctx context.Context) {
 			}
 			if frame != nil {
 				if frame.Data[1] != 0x7E {
+					// TODO: we seem to miss some messages sometimes. likely something to do with the logging process downstream
 					l.WriteToLog(fmt.Sprintf("Read: %s", frame.String()), logging.LogTypeCanbusLog)
 				}
 				d.frameBroadcaster.Broadcast(frame)

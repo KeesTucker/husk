@@ -41,6 +41,8 @@ const (
 	logSectionLabelText         = "Log"
 	driverLabelText             = "Select Driver"
 	ecuLabelText                = "Select ECU"
+	readErrorsButtonText        = "Read Errors"
+	clearErrorsButtonText       = "Clear Errors"
 )
 
 var emptyLogLabel *widget.Label = widget.NewLabel("")
@@ -202,8 +204,20 @@ func (g *GUI) createCommandContainer(ctx context.Context) *fyne.Container {
 	g.ecuDisconnectButton.Disable()
 	ecuContainer := container.NewHBox(ecuLabel, g.ecuScanButton, g.ecuSelect, g.ecuConnectButton, g.ecuDisconnectButton)
 
-	// Combine driver and ECU containers
-	commandContainer := container.NewVBox(driverContainer, ecuContainer, manualFrameEntryContainer)
+	// Misc commands
+	readErrorsButton := widget.NewButton(readErrorsButtonText, func() {
+		e := services.Get(services.ServiceECU).(ecus.ECUProcessor)
+		e.ReadErrors(ctx)
+	})
+
+	clearErrorsButton := widget.NewButton(clearErrorsButtonText, func() {
+		e := services.Get(services.ServiceECU).(ecus.ECUProcessor)
+		e.ClearErrors(ctx)
+	})
+
+	miscCommands := container.NewHBox(readErrorsButton, clearErrorsButton)
+
+	commandContainer := container.NewVBox(driverContainer, ecuContainer, miscCommands, manualFrameEntryContainer)
 
 	return commandContainer
 }

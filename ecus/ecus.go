@@ -5,20 +5,19 @@ import (
 
 	"husk/logging"
 	"husk/services"
-	"husk/uds"
 )
 
 type (
 	ECUType      int
 	ECUProcessor interface {
+		Register() (ECUProcessor, error)
+		Start(ctx context.Context) (ECUProcessor, error)
+		Cleanup()
 		String() string
 		GetTesterId() uint16
 		GetECUId() uint16
-		Start(ctx context.Context) (ECUProcessor, error)
-		Register() (ECUProcessor, error)
-		SubscribeReadMessages() (chan *uds.Message, error)
-		UnsubscribeReadMessages(ch chan *uds.Message)
-		Cleanup()
+		ReadErrors(ctx context.Context)
+		ClearErrors(ctx context.Context)
 	}
 )
 
@@ -44,7 +43,10 @@ func ScanForECUs(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	l.WriteToLog("Scanning for ecus", logging.LogTypeLog)
 	availableECUs = []ECUProcessor{}
+
+	// Add more ecu types here
 	availableECUs = ScanKTM16To20(ctx, availableECUs)
+
 	availableECUIds = make([]string, len(availableECUs))
 	ecuIdToECU = make(map[string]ECUProcessor)
 	for i, ecu := range availableECUs {
