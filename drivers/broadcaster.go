@@ -47,7 +47,7 @@ func (b *CanFrameBroadcaster) Broadcast(frame *canbus.CanFrame) {
 		select {
 		case ch <- frame:
 		default:
-			l.WriteToLog("Error: slow subscriber, frame channel is full. dropping frame.", logging.LogTypeLog)
+			l.WriteLog("Slow subscriber, can frame channel is full. Dropping frame.", logging.LogLevelWarning)
 		}
 	}
 }

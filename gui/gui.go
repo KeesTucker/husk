@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"image/color"
-	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -27,7 +26,6 @@ const (
 	scrollContainerMinWidth     = 200
 	scrollContainerMinHeight    = 100
 	scrollThreshold             = 20
-	scrollBackgroundColor       = "#000412"
 	manualFrameEntryPlaceholder = "Enter manual frame..."
 	sendManualFrameButtonText   = "Send CAN"
 	driverScanButtonText        = "Scan"
@@ -36,24 +34,22 @@ const (
 	ecuScanButtonText           = "Scan"
 	ecuConnectButtonText        = "Connect"
 	ecuDisconnectButtonText     = "Disconnect"
-	protocolSectionLabelText    = "Protocol Messages"
-	canbusSectionLabelText      = "CANBUS Frames"
 	logSectionLabelText         = "Log"
+	messagesSectionLabelText    = "CANBUS/Protocol Messages"
 	driverLabelText             = "Select Driver"
 	ecuLabelText                = "Select ECU"
 	readErrorsButtonText        = "Read Errors"
 	clearErrorsButtonText       = "Clear Errors"
 )
 
-var emptyLogLabel *widget.Label = widget.NewLabel("")
-
 type GUI struct {
 	app    fyne.App
 	window fyne.Window
 	// state
-	isRunning  bool
-	autoScroll bool
-	driverName string
+	isRunning          bool
+	autoScrollLogs     bool
+	autoScrollMessages bool
+	driverName         string
 	// UI elements
 	driverScanButton       *widget.Button
 	driverSelect           *widget.Select
@@ -65,8 +61,10 @@ type GUI struct {
 	ecuDisconnectButton    *widget.Button
 	manualFrameEntry       *widget.Entry
 	sendManualFrameButton  *widget.Button
-	logEntryContainer      *fyne.Container
+	logContainer           *fyne.Container
 	logScrollContainer     *container.Scroll
+	messageContainer       *fyne.Container
+	messageScrollContainer *container.Scroll
 }
 
 func RegisterGUI() *GUI {
@@ -74,13 +72,16 @@ func RegisterGUI() *GUI {
 	g := &GUI{}
 	defer services.Register(services.ServiceGUI, g)
 
-	l.AddLogSub(g.WriteToLog)
+	l.AddLogSub(g.writeLog)
+	l.AddMessageSub(g.writeMessage)
 	return g
 }
 
 func (g *GUI) Start(ctx context.Context) *GUI {
-	g.autoScroll = true
+	g.autoScrollLogs = true
+	g.autoScrollMessages = true
 	g.app = app.New()
+	g.app.Settings().SetTheme(&HuskTheme{})
 	g.buildUI(ctx)
 	g.subToEvents()
 	g.isRunning = true
@@ -88,48 +89,32 @@ func (g *GUI) Start(ctx context.Context) *GUI {
 	return g
 }
 
-func (g *GUI) WriteToLog(message string, logType logging.LogType) {
-	if !g.isRunning {
-		return
-	}
-
-	label := widget.NewLabel(message)
-	label.Wrapping = fyne.TextWrapWord
-
-	switch logType {
-	case logging.LogTypeProtocolLog:
-		g.logEntryContainer.Add(container.NewGridWithColumns(3, emptyLogLabel, emptyLogLabel, label))
-	case logging.LogTypeCanbusLog:
-		g.logEntryContainer.Add(container.NewGridWithColumns(3, emptyLogLabel, label, emptyLogLabel))
-	case logging.LogTypeLog:
-		g.logEntryContainer.Add(container.NewGridWithColumns(3, label, emptyLogLabel, emptyLogLabel))
-	}
-
-	if g.autoScroll {
-		g.logScrollContainer.ScrollToBottom()
-	}
-}
-
 // buildUI constructs the user interface
 func (g *GUI) buildUI(ctx context.Context) {
 	// Initialize Log section
-	g.logEntryContainer = container.NewVBox()
-	var logBGContainer *fyne.Container
-	logBGContainer, g.logScrollContainer = g.createScrollContainerWithBG(g.logEntryContainer)
-	logSectionLabel := widget.NewLabel(logSectionLabelText)
-	logSectionLabel.Alignment = fyne.TextAlignCenter
-	canbusSectionLabel := widget.NewLabel(canbusSectionLabelText)
-	canbusSectionLabel.Alignment = fyne.TextAlignCenter
-	protocolSectionLabel := widget.NewLabel(protocolSectionLabelText)
-	protocolSectionLabel.Alignment = fyne.TextAlignCenter
-	labels := container.NewGridWithColumns(3, logSectionLabel, canbusSectionLabel, protocolSectionLabel)
-	logContainer := container.NewBorder(labels, nil, nil, nil, logBGContainer)
+	g.logContainer = container.NewVBox()
+	var outerLogContainer *fyne.Container
+	outerLogContainer, g.logScrollContainer = g.createScrollContainerWithBG(
+		logSectionLabelText,
+		g.logContainer,
+		true,
+	)
+
+	g.messageContainer = container.NewVBox()
+	var outerMessageContainer *fyne.Container
+	outerMessageContainer, g.messageScrollContainer = g.createScrollContainerWithBG(
+		messagesSectionLabelText,
+		g.messageContainer,
+		false,
+	)
 
 	// Initialize command section
 	commandContainer := g.createCommandContainer(ctx)
 
-	// Set final split layout
-	content := container.NewHSplit(commandContainer, logContainer)
+	// Set up splits
+	messageAndLogSplit := container.NewHSplit(outerLogContainer, outerMessageContainer)
+	messageAndLogSplit.SetOffset(0.40)
+	content := container.NewHSplit(commandContainer, messageAndLogSplit)
 	content.SetOffset(0.25)
 
 	// Initialize and configure the main window
@@ -138,13 +123,25 @@ func (g *GUI) buildUI(ctx context.Context) {
 	g.window.Resize(fyne.NewSize(windowWidth, windowHeight))
 }
 
-// createScrollContainerWithBG creates a scrollable container with a background
-func (g *GUI) createScrollContainerWithBG(entryContainer *fyne.Container) (*fyne.Container, *container.Scroll) {
-	scroll := container.NewVScroll(entryContainer)
-	scroll.SetMinSize(fyne.NewSize(scrollContainerMinWidth, scrollContainerMinHeight))
-
+// createScrollContainerWithBG creates a scrollable container with a background. TODO: isLog needs to be an enum or something, this is a bit jank.
+func (g *GUI) createScrollContainerWithBG(
+	title string,
+	entryContainer *fyne.Container,
+	isLog bool,
+) (
+	*fyne.Container,
+	*container.Scroll,
+) {
+	size := fyne.NewSize(scrollContainerMinWidth, scrollContainerMinHeight)
+	// Double pad the entry container and add it to a scroll
+	scroll := container.NewScroll(
+		container.NewPadded(
+			container.NewPadded(entryContainer),
+		),
+	)
+	scroll.SetMinSize(size)
 	// Set background color
-	bgColor, _ := parseHexColor(scrollBackgroundColor)
+	bgColor := color.Black
 	background := canvas.NewRectangle(bgColor)
 	bgContainer := container.NewStack(background, scroll)
 
@@ -153,13 +150,25 @@ func (g *GUI) createScrollContainerWithBG(entryContainer *fyne.Container) (*fyne
 		contentHeight := scroll.Content.Size().Height
 		containerHeight := scroll.Size().Height
 		if offset.Y+containerHeight >= contentHeight-scrollThreshold {
-			g.autoScroll = true // User is near the bottom
+			if isLog {
+				g.autoScrollLogs = true
+			} else {
+				g.autoScrollMessages = true
+			}
 		} else {
-			g.autoScroll = false // User scrolled up
+			if isLog {
+				g.autoScrollLogs = false
+			} else {
+				g.autoScrollMessages = false
+			}
 		}
 	}
 
-	return bgContainer, scroll
+	label := widget.NewLabel(title)
+	label.Alignment = fyne.TextAlignCenter
+
+	scrollWithLabel := container.NewBorder(label, nil, nil, nil, bgContainer)
+	return scrollWithLabel, scroll
 }
 
 // createCommandContainer initializes the command section with driver and ECU controls
@@ -168,9 +177,17 @@ func (g *GUI) createCommandContainer(ctx context.Context) *fyne.Container {
 	g.manualFrameEntry = widget.NewEntry()
 	g.manualFrameEntry.SetPlaceHolder(manualFrameEntryPlaceholder)
 	g.manualFrameEntry.Disable()
-	g.sendManualFrameButton = widget.NewButton(sendManualFrameButtonText, func() { g.sendManualFrame(ctx) })
+	g.sendManualFrameButton = widget.NewButton(
+		sendManualFrameButtonText,
+		func() { g.sendManualFrame(ctx) },
+	)
 	g.sendManualFrameButton.Disable()
-	manualFrameEntryContainer := container.NewBorder(nil, nil, nil, g.sendManualFrameButton, g.manualFrameEntry)
+	manualFrameEntryContainer := container.NewBorder(
+		nil,
+		nil,
+		nil,
+		g.sendManualFrameButton,
+		g.manualFrameEntry)
 
 	// Driver selection controls
 	driverLabel := widget.NewLabel(driverLabelText)
@@ -179,14 +196,19 @@ func (g *GUI) createCommandContainer(ctx context.Context) *fyne.Container {
 		g.driverConnectButton.Enable()
 	})
 	g.driverSelect.Disable()
-	g.driverConnectButton = widget.NewButton(driverConnectButtonText, func() { drivers.Connect(ctx, g.driverSelect.Selected) })
+	g.driverConnectButton = widget.NewButton(
+		driverConnectButtonText, func() { drivers.Connect(ctx, g.driverSelect.Selected) })
 	g.driverConnectButton.Disable()
-	g.driverDisconnectButton = widget.NewButton(driverDisconnectButtonText, func() {
-		drivers.Disconnect()
-		ecus.Disconnect()
-	})
+	g.driverDisconnectButton = widget.NewButton(
+		driverDisconnectButtonText, func() { drivers.Disconnect(); ecus.Disconnect() })
 	g.driverDisconnectButton.Disable()
-	driverContainer := container.NewHBox(driverLabel, g.driverScanButton, g.driverSelect, g.driverConnectButton, g.driverDisconnectButton)
+	driverContainer := container.NewHBox(
+		driverLabel,
+		g.driverScanButton,
+		g.driverSelect,
+		g.driverConnectButton,
+		g.driverDisconnectButton,
+	)
 
 	// ECU selection controls
 	ecuLabel := widget.NewLabel(ecuLabelText)
@@ -198,11 +220,19 @@ func (g *GUI) createCommandContainer(ctx context.Context) *fyne.Container {
 		g.ecuConnectButton.Enable()
 	})
 	g.ecuSelect.Disable()
-	g.ecuConnectButton = widget.NewButton(ecuConnectButtonText, func() { ecus.Connect(ctx, g.ecuSelect.Selected) })
+	g.ecuConnectButton = widget.NewButton(
+		ecuConnectButtonText, func() { ecus.Connect(ctx, g.ecuSelect.Selected) })
 	g.ecuConnectButton.Disable()
-	g.ecuDisconnectButton = widget.NewButton(ecuDisconnectButtonText, func() { ecus.Disconnect() })
+	g.ecuDisconnectButton = widget.NewButton(
+		ecuDisconnectButtonText, func() { ecus.Disconnect() })
 	g.ecuDisconnectButton.Disable()
-	ecuContainer := container.NewHBox(ecuLabel, g.ecuScanButton, g.ecuSelect, g.ecuConnectButton, g.ecuDisconnectButton)
+	ecuContainer := container.NewHBox(
+		ecuLabel,
+		g.ecuScanButton,
+		g.ecuSelect,
+		g.ecuConnectButton,
+		g.ecuDisconnectButton,
+	)
 
 	// Misc commands
 	readErrorsButton := widget.NewButton(readErrorsButtonText, func() {
@@ -217,49 +247,19 @@ func (g *GUI) createCommandContainer(ctx context.Context) *fyne.Container {
 
 	miscCommands := container.NewHBox(readErrorsButton, clearErrorsButton)
 
-	commandContainer := container.NewVBox(driverContainer, ecuContainer, miscCommands, manualFrameEntryContainer)
+	commandContainer := container.NewBorder(
+		nil,
+		manualFrameEntryContainer,
+		nil,
+		nil,
+		container.NewVBox(
+			driverContainer,
+			ecuContainer,
+			miscCommands,
+		),
+	)
 
 	return commandContainer
-}
-
-// parseHexColor parses a hex color string and returns a color.RGBA
-func parseHexColor(s string) (color.Color, error) {
-	// Remove the leading # if present
-	s = strings.TrimPrefix(s, "#")
-
-	// Ensure the string is 6 or 8 characters long
-	if len(s) != 6 && len(s) != 8 {
-		return nil, fmt.Errorf("invalid hex color: %s", s)
-	}
-
-	// Parse the red, green, and blue components
-	r, err := strconv.ParseUint(s[0:2], 16, 8)
-	if err != nil {
-		return nil, err
-	}
-	g, err := strconv.ParseUint(s[2:4], 16, 8)
-	if err != nil {
-		return nil, err
-	}
-	b, err := strconv.ParseUint(s[4:6], 16, 8)
-	if err != nil {
-		return nil, err
-	}
-
-	var a uint64 = 255 // Default alpha (opaque)
-	if len(s) == 8 {
-		a, err = strconv.ParseUint(s[6:8], 16, 8)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return color.RGBA{
-		R: uint8(r),
-		G: uint8(g),
-		B: uint8(b),
-		A: uint8(a),
-	}, nil
 }
 
 func (g *GUI) subToEvents() {
@@ -271,16 +271,100 @@ func (g *GUI) subToEvents() {
 	ecus.SubscribeToDisconnectedEvent(g.onECUDisconnected)
 }
 
+func (g *GUI) writeLog(log logging.Log) {
+	if !g.isRunning {
+		return
+	}
+
+	messageLines := strings.Split(log.Message, "\n")
+
+	for i, line := range messageLines {
+		if i > 0 {
+			line = "	" + line
+		}
+		label := canvas.NewText(line, color.Black)
+		label.TextSize = 14
+		label.TextStyle = fyne.TextStyle{Bold: true, Monospace: true}
+
+		switch log.Level {
+		case logging.LogLevelSuccess:
+			label.Color = color.RGBA{R: 0, G: 255, B: 0, A: 255}
+		case logging.LogLevelInfo:
+			label.Color = color.White
+		case logging.LogLevelWarning:
+			label.Color = color.RGBA{R: 255, G: 255, B: 0, A: 255}
+		case logging.LogLevelError:
+			label.Color = color.RGBA{R: 255, G: 0, B: 0, A: 255}
+		case logging.LogLevelResult:
+			label.Color = color.RGBA{R: 0, G: 0, B: 255, A: 255}
+		}
+
+		// Add label to log container
+		g.logContainer.Add(label)
+	}
+
+	// Automatically scroll to bottom if autoScroll is enabled
+	if g.autoScrollLogs {
+		g.logScrollContainer.ScrollToBottom()
+	}
+}
+
+func (g *GUI) writeMessage(message logging.Message) {
+	if !g.isRunning {
+		return
+	}
+
+	// Break up message request response chains
+	if message.MessageType == logging.MessageTypeUDSWrite {
+		// Create a horizontal line
+		line := canvas.NewLine(color.White)
+		line.StrokeWidth = 2
+		line.Resize(fyne.NewSize(g.messageContainer.Size().Width, 2))
+		// Add the horizontal line to the container
+		g.messageContainer.Add(line)
+	}
+
+	dataLines := strings.Split(message.Data, "\n")
+
+	for i, line := range dataLines {
+		if i > 0 {
+			line = "	" + line
+		}
+		label := canvas.NewText(line, color.Black)
+		label.TextSize = 14
+		label.TextStyle = fyne.TextStyle{Bold: true, Monospace: true}
+
+		switch message.MessageType {
+		case logging.MessageTypeCANBUSWrite:
+			label.Color = color.RGBA{R: 0, G: 0, B: 255, A: 255}
+		case logging.MessageTypeCANBUSRead:
+			label.Color = color.RGBA{R: 255, G: 0, B: 0, A: 255}
+		case logging.MessageTypeUDSWrite:
+			label.Color = color.RGBA{R: 0, G: 255, B: 0, A: 255}
+		case logging.MessageTypeUDSRead:
+			label.Color = color.RGBA{R: 255, G: 0, B: 255, A: 255}
+		}
+
+		// Add label to log container
+		g.messageContainer.Add(label)
+	}
+	// Automatically scroll to bottom if autoScroll is enabled
+	if g.autoScrollMessages {
+		g.messageScrollContainer.ScrollToBottom()
+	}
+}
+
 func (g *GUI) sendManualFrame(ctx context.Context) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	if g.manualFrameEntry.Text != "" {
 		data, err := utils.HexStringToByteArray(g.manualFrameEntry.Text)
 		if err != nil {
-			g.WriteToLog(fmt.Sprintf("Error: parsing frame: %s\n", err.Error()), logging.LogTypeLog)
+			l.WriteLog(fmt.Sprintf("Error parsing frame: %s", err.Error()), logging.LogLevelError)
 			return
 		}
 		err = uds.RawDataToMessage(uds.TesterID, data, false).Send(ctx)
 		if err != nil {
-			g.WriteToLog(fmt.Sprintf("Error: sending manual frame: %v", err), logging.LogTypeLog)
+			l.WriteLog(fmt.Sprintf("Error sending manual frame: %s", err.Error()), logging.LogLevelError)
 			return
 		}
 		g.manualFrameEntry.SetText("")

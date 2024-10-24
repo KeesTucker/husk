@@ -126,7 +126,7 @@ func (m *Message) Send(ctx context.Context) error {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
 	if m.ServiceID != ServiceTesterPresent {
-		l.WriteToLog(m.String(), logging.LogTypeProtocolLog)
+		l.WriteMessage("UDS: "+m.String(), logging.MessageTypeUDSWrite)
 	}
 
 	rawData := m.ToRawData()
@@ -169,12 +169,12 @@ func (m *Message) String() string {
 		dataStr = "N/A"
 	}
 	if !m.IsResponse {
-		return fmt.Sprintf("Request: Id: %s, Service: %s, Subfunction: %s, ASCII: %s, Data: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
+		return fmt.Sprintf("Request:\nId: %s\nService: %s\nSubfunction: %s\nASCII: %s\nData: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
 	}
 	if *m.IsPositive {
-		return fmt.Sprintf("Response: Id: %s, Service: %s, Subfunction: %s, ASCII: %s, Data: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
+		return fmt.Sprintf("Response:\nId: %s\nService: %s\nSubfunction: %s\nASCII: %s\nData: %s", m.SenderLabel(), m.ServiceLabel(), m.SubfunctionLabel(), m.ASCIIRepresentation(), dataStr)
 	}
-	return fmt.Sprintf("Negative Response: Id: %s, Service: %s, NRC: %s", m.SenderLabel(), m.ServiceLabel(), m.NRCLabel())
+	return fmt.Sprintf("NEGATIVE Response:\nId: %s\nService: %s\nNRC: %s", m.SenderLabel(), m.ServiceLabel(), m.NRCLabel())
 }
 
 // ASCIIRepresentation returns the alphanumeric ASCII string representation of the message data.

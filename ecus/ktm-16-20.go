@@ -57,23 +57,23 @@ func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 	// Register said instance so we can send ID requests
 	_, err := tempProcessor.Register()
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Failed to register temp KTM16To20 ECU Processor: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Failed to register temp KTM16To20 ECU Processor: %v", err), logging.LogLevelError)
 		return nil
 	}
 	// We want to deregister our temporary ecu service so that the actual ecu service can be registered
 	defer services.Deregister(services.ServiceECU)
 	_, err = tempProcessor.Start(ctx)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Failed to start temp KTM16To20 ECU Processor: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Failed to start temp KTM16To20 ECU Processor: %v", err), logging.LogLevelError)
 		return nil
 	}
 	defer tempProcessor.Cleanup()
 	// Attempt to communicate with the ECU
-	l.WriteToLog("Scanning for 2016 to 2020 KTM/Husqvarna", logging.LogTypeLog)
+	l.WriteLog("Scanning for 2016 to 2020 KTM/Husqvarna", logging.LogLevelInfo)
 
 	err = uds.SendTesterPresent(ctx)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Failed to send tester present: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Failed to send tester present: %v", err), logging.LogLevelError)
 		return nil
 	}
 
@@ -81,15 +81,15 @@ func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 	service := uds.ServiceTesterPresent
 	_, err = tempProcessor.readMessage(ctx, &service, nil)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Failed to get tester present response: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Failed to get tester present response: %v", err), logging.LogLevelError)
 		return nil
 	}
 
-	l.WriteToLog("Communication established\n", logging.LogTypeLog)
+	l.WriteLog("Communication established", logging.LogLevelSuccess)
 	// Send ECU identification request
 	identification, err := tempProcessor.scanEcu(ctx)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("No compatible ECU detected: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("No compatible ECU detected: %v", err), logging.LogLevelWarning)
 		return nil
 	}
 	// Create a fresh ecu processor instance and return that so it can be registered at the user's leisure
@@ -121,7 +121,7 @@ func (e *ProcessorKTM16To20) Start(ctx context.Context) (ECUProcessor, error) {
 	e.wg.Add(2)
 	go e.testerPresentLoop(ecuCtx)
 	go e.processAndBroadcastUDSMessages(ecuCtx)
-	l.WriteToLog("ECU processor running", logging.LogTypeLog)
+	l.WriteLog("ECU processor running", logging.LogLevelSuccess)
 	return e, nil
 }
 
@@ -157,7 +157,7 @@ func (e *ProcessorKTM16To20) Cleanup() {
 	e.wg.Wait()
 }
 
-func (e *ProcessorKTM16To20) ReadErrors(ctx context.Context) {
+func (e *ProcessorKTM16To20) ReadErrors(ctx context.Context) (dtcs []string) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 
 	serviceId := uds.ServiceReadErrorsKTM16To20
@@ -167,31 +167,32 @@ func (e *ProcessorKTM16To20) ReadErrors(ctx context.Context) {
 	}
 	err := req.Send(ctx)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: failed to send read error message: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Error failed to send read error message: %v", err), logging.LogLevelError)
 		return
 	}
 	resp, err := e.readMessage(ctx, &serviceId, nil)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: failed to read read error response: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Error failed to read read error response: %v", err), logging.LogLevelError)
 		return
 	}
-	var dtcs []string
 	for i := 1; i < len(resp.Data); i += 2 {
 		// Convert each dtc to a string representing the dtc code
 		dtc := fmt.Sprintf("%02X%02X", resp.Data[i], resp.Data[i+1])
 		dtcs = append(dtcs, dtc)
 
 	}
+	l.WriteLog("SUCCESSFULLY READ ERRORS", logging.LogLevelSuccess)
 	if len(dtcs) > 0 {
 		result := "ERRORS:\n"
 		for _, dtc := range dtcs {
 			result += fmt.Sprintf("DTC: %s\n", uds.GetDTCLabel(dtc))
 		}
-		l.WriteToLog(result, logging.LogTypeLog)
+		l.WriteLog(result, logging.LogLevelResult)
 
 		return
 	}
-	l.WriteToLog("NO ERRORS FOUND", logging.LogTypeLog)
+	l.WriteLog("NO ERRORS FOUND", logging.LogLevelResult)
+	return
 }
 
 func (e *ProcessorKTM16To20) ClearErrors(ctx context.Context) {
@@ -204,16 +205,16 @@ func (e *ProcessorKTM16To20) ClearErrors(ctx context.Context) {
 	}
 	err := req.Send(ctx)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: failed to send clear error message: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Error failed to send clear error message: %v", err), logging.LogLevelError)
 		return
 	}
 	_, err = e.readMessage(ctx, &serviceId, nil)
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: failed to read clear error response: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Error failed to read clear error response: %v", err), logging.LogLevelError)
 		return
 	}
 
-	l.WriteToLog("CLEARED ERRORS SUCCESSFULLY", logging.LogTypeLog)
+	l.WriteLog("CLEARED ERRORS SUCCESSFULLY", logging.LogLevelSuccess)
 }
 
 // readMessage will read the next UDS message received. It will block by the specified read timeout and will filter based on serviceId and subfunction
@@ -250,7 +251,7 @@ func (e *ProcessorKTM16To20) readMessage(ctx context.Context, serviceId *byte, s
 			}
 			return message, nil
 		case <-readCtx.Done():
-			l.WriteToLog("Timeout waiting for response", logging.LogTypeLog)
+			l.WriteLog(fmt.Sprintf("Timeout waiting for request response, service ID: %02X, subfunction: %02X", serviceId, subfunction), logging.LogLevelError)
 			return nil, readCtx.Err()
 		}
 	}
@@ -263,7 +264,7 @@ func (e *ProcessorKTM16To20) processAndBroadcastUDSMessages(ctx context.Context)
 	for {
 		select {
 		case <-ctx.Done():
-			l.WriteToLog("Stopping UDS message processing due to context cancellation", logging.LogTypeLog)
+			l.WriteLog("Stopping UDS message processing due to context cancellation", logging.LogLevelInfo)
 			return
 		default:
 			message, err := uds.Read(ctx)
@@ -271,12 +272,12 @@ func (e *ProcessorKTM16To20) processAndBroadcastUDSMessages(ctx context.Context)
 				if errors.Is(ctx.Err(), context.Canceled) {
 					return
 				}
-				l.WriteToLog(err.Error(), logging.LogTypeLog)
+				l.WriteLog(fmt.Sprintf("Error reading UDS: %s", err.Error()), logging.LogLevelError)
 				continue
 			}
 			if message != nil {
 				if message.ServiceID != uds.ServiceTesterPresent {
-					l.WriteToLog(message.String(), logging.LogTypeProtocolLog)
+					l.WriteMessage("UDS: "+message.String(), logging.MessageTypeUDSRead)
 				}
 				e.messageBroadcaster.Broadcast(message)
 			}
@@ -294,7 +295,7 @@ func (e *ProcessorKTM16To20) testerPresentLoop(ctx context.Context) {
 		default:
 			err := uds.SendTesterPresent(ctx)
 			if err != nil {
-				l.WriteToLog(fmt.Sprintf("Error: couldn't send UDS tester present"), logging.LogTypeLog)
+				l.WriteLog(fmt.Sprintf("Error couldn't send UDS tester present"), logging.LogLevelError)
 			}
 		}
 		time.Sleep(TesterPresentDelayKTM16To20)

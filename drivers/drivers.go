@@ -39,11 +39,11 @@ var (
 
 func ScanForDrivers() {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
-	l.WriteToLog("Scanning for drivers", logging.LogTypeLog)
+	l.WriteLog("Scanning for drivers", logging.LogLevelInfo)
 
 	ports, err := enumerator.GetDetailedPortsList()
 	if err != nil {
-		l.WriteToLog(fmt.Sprintf("Error: failed to get ports: %v", err), logging.LogTypeLog)
+		l.WriteLog(fmt.Sprintf("Error failed to get ports: %v", err), logging.LogLevelError)
 	}
 
 	availableDrivers = []Driver{}
@@ -59,10 +59,10 @@ func ScanForDrivers() {
 	scanEvent(availableDriverNames)
 
 	if len(availableDriverNames) == 0 {
-		l.WriteToLog("Didn't find any available drivers", logging.LogTypeLog)
+		l.WriteLog("Didn't find any available drivers", logging.LogLevelWarning)
 		return
 	}
-	l.WriteToLog("Found available drivers", logging.LogTypeLog)
+	l.WriteLog("Found available drivers", logging.LogLevelSuccess)
 }
 
 func Connect(ctx context.Context, name string) {
@@ -70,7 +70,7 @@ func Connect(ctx context.Context, name string) {
 
 	driver, err := driverNameToDriver[name].Register()
 	if err != nil {
-		l.WriteToLog("Error: failed to connect to driver", logging.LogTypeLog)
+		l.WriteLog("Error failed to connect to driver", logging.LogLevelError)
 		disconnectEvent()
 		ScanForDrivers()
 		return
@@ -78,13 +78,13 @@ func Connect(ctx context.Context, name string) {
 	ctx, disconnectFunc = context.WithCancel(ctx)
 	_, err = driver.Start(ctx)
 	if err != nil {
-		l.WriteToLog("Error: failed to start driver", logging.LogTypeLog)
+		l.WriteLog("Error failed to start driver", logging.LogLevelError)
 		disconnectEvent()
 		ScanForDrivers()
 		return
 	}
 	connectEvent()
-	l.WriteToLog("Connected to driver successfully", logging.LogTypeLog)
+	l.WriteLog("Connected to driver successfully", logging.LogLevelSuccess)
 }
 
 func Disconnect() {
@@ -95,7 +95,7 @@ func Disconnect() {
 	}
 	disconnectEvent()
 	services.Deregister(services.ServiceDriver)
-	l.WriteToLog("Disconnected from driver successfully", logging.LogTypeLog)
+	l.WriteLog("Disconnected from driver successfully", logging.LogLevelSuccess)
 }
 
 func SubscribeToScanEvent(callback func(availableDriverNames []string)) {

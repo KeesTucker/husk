@@ -19,5 +19,5 @@ func (f *CanFrame) String() string {
 		formattedData[i] = fmt.Sprintf("0x%02X", f.Data[i])
 	}
 	dataString := strings.Join(formattedData, " ")
-	return fmt.Sprintf("ID: 0x%X, DLC: %d, Data: %s", f.ID, f.DLC, dataString)
+	return fmt.Sprintf("ID: 0x%X\nDLC: %d\nData: %s", f.ID, f.DLC, dataString)
 }

@@ -16,7 +16,7 @@ type (
 		String() string
 		GetTesterId() uint16
 		GetECUId() uint16
-		ReadErrors(ctx context.Context)
+		ReadErrors(ctx context.Context) []string
 		ClearErrors(ctx context.Context)
 	}
 )
@@ -41,7 +41,7 @@ var (
 
 func ScanForECUs(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
-	l.WriteToLog("Scanning for ecus", logging.LogTypeLog)
+	l.WriteLog("Scanning for ecus", logging.LogLevelInfo)
 	availableECUs = []ECUProcessor{}
 
 	// Add more ecu types here
@@ -55,17 +55,17 @@ func ScanForECUs(ctx context.Context) {
 	}
 	scanEvent(availableECUIds)
 	if len(availableECUIds) == 0 {
-		l.WriteToLog("Didn't find any available ecus", logging.LogTypeLog)
+		l.WriteLog("Didn't find any available ecus", logging.LogLevelWarning)
 		return
 	}
-	l.WriteToLog("Found available ecus", logging.LogTypeLog)
+	l.WriteLog("Found available ecus", logging.LogLevelSuccess)
 }
 
 func Connect(ctx context.Context, name string) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	driver, err := ecuIdToECU[name].Register()
 	if err != nil {
-		l.WriteToLog("Error: failed to connect to ECU", logging.LogTypeLog)
+		l.WriteLog("Error failed to connect to ECU", logging.LogLevelError)
 		disconnectEvent()
 		ScanForECUs(ctx)
 		return
@@ -73,13 +73,13 @@ func Connect(ctx context.Context, name string) {
 	ctx, disconnectFunc = context.WithCancel(ctx)
 	_, err = driver.Start(ctx)
 	if err != nil {
-		l.WriteToLog("Error: failed to start ECU processor", logging.LogTypeLog)
+		l.WriteLog("Error failed to start ECU processor", logging.LogLevelError)
 		disconnectEvent()
 		ScanForECUs(ctx)
 		return
 	}
 	connectEvent()
-	l.WriteToLog("Connected to ECU successfully", logging.LogTypeLog)
+	l.WriteLog("Connected to ECU successfully", logging.LogLevelSuccess)
 }
 
 func Disconnect() {
@@ -89,7 +89,7 @@ func Disconnect() {
 	}
 	disconnectEvent()
 	services.Deregister(services.ServiceECU)
-	l.WriteToLog("Disconnected from ECU successfully", logging.LogTypeLog)
+	l.WriteLog("Disconnected from ECU successfully", logging.LogLevelSuccess)
 }
 
 func SubscribeToScanEvent(callback func(availableECUIds []string)) {

@@ -7,29 +7,54 @@ import (
 	"husk/services"
 )
 
-type Logger struct {
-	bufferedProtocolLog []string
-	bufferedCanbusLog   []string
-	bufferedLog         []string
+type (
+	LogLevel    int
+	MessageType int
+)
+
+type Log struct {
+	Message string
+	Level   LogLevel
 }
 
-type LogSubFunc func(message string, logType LogType)
+type Message struct {
+	Data        string
+	MessageType MessageType
+}
 
-type LogType int
+type Logger struct {
+	bufferedLog      []Log
+	bufferedMessages []Message
+}
 
-const (
-	LogTypeProtocolLog LogType = iota
-	LogTypeCanbusLog
-	LogTypeLog
+type (
+	LogSubFunc     func(log Log)
+	MessageSubFunc func(message Message)
 )
 
 const (
-	logRefreshRate = 64
+	LogLevelInfo LogLevel = iota
+	LogLevelSuccess
+	LogLevelWarning
+	LogLevelError
+	LogLevelResult
+)
+
+const (
+	MessageTypeCANBUSRead MessageType = iota
+	MessageTypeCANBUSWrite
+	MessageTypeUDSRead
+	MessageTypeUDSWrite
+)
+
+const (
+	refreshRate = 64
 )
 
 var (
-	logRefreshDelay = time.Duration((1.0 / logRefreshRate) * float64(time.Second))
-	logSubscribers  []LogSubFunc
+	refreshDelay       = time.Duration((1.0 / refreshRate) * float64(time.Second))
+	logSubscribers     []LogSubFunc
+	messageSubscribers []MessageSubFunc
 )
 
 func RegisterLogger() *Logger {
@@ -43,21 +68,24 @@ func (l *Logger) Start(ctx context.Context) *Logger {
 	return l
 }
 
-func (l *Logger) AddLogSub(subFunc LogSubFunc) *Logger {
+func (l *Logger) AddLogSub(subFunc LogSubFunc) {
 	logSubscribers = append(logSubscribers, subFunc)
-	return l
 }
 
-// WriteToLog writes to the appropriate log buffer
-func (l *Logger) WriteToLog(message string, logType LogType) {
-	switch logType {
-	case LogTypeProtocolLog:
-		l.bufferedProtocolLog = append(l.bufferedProtocolLog, message)
-	case LogTypeCanbusLog:
-		l.bufferedCanbusLog = append(l.bufferedCanbusLog, message)
-	case LogTypeLog:
-		l.bufferedLog = append(l.bufferedLog, message)
-	}
+func (l *Logger) AddMessageSub(subFunc MessageSubFunc) {
+	messageSubscribers = append(messageSubscribers, subFunc)
+}
+
+// WriteLog writes to the log buffer
+func (l *Logger) WriteLog(message string, logType LogLevel) {
+	log := Log{Message: message, Level: logType}
+	l.bufferedLog = append(l.bufferedLog, log)
+}
+
+// WriteMessage writes a canbus/uds message to the message buffer
+func (l *Logger) WriteMessage(data string, messageType MessageType) {
+	message := Message{Data: data, MessageType: messageType}
+	l.bufferedMessages = append(l.bufferedMessages, message)
 }
 
 // displayLogLoop manages the log refresh and ensures protocol and canbus logs remain in sync
@@ -67,23 +95,20 @@ func (l *Logger) displayLogLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			time.Sleep(logRefreshDelay)
+			time.Sleep(refreshDelay)
 			for _, subscriber := range logSubscribers {
-				for _, log := range l.bufferedProtocolLog {
-					subscriber(log, LogTypeProtocolLog)
-				}
-				for _, log := range l.bufferedCanbusLog {
-					subscriber(log, LogTypeCanbusLog)
-				}
 				for _, log := range l.bufferedLog {
-					subscriber(log, LogTypeLog)
+					subscriber(log)
 				}
 			}
-
-			// Clear logs after refreshing
-			l.bufferedProtocolLog = nil
-			l.bufferedCanbusLog = nil
+			for _, subscriber := range messageSubscribers {
+				for _, message := range l.bufferedMessages {
+					subscriber(message)
+				}
+			}
+			// Clear buffers after displaying
 			l.bufferedLog = nil
+			l.bufferedMessages = nil
 		}
 	}
 }

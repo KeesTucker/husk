@@ -46,7 +46,7 @@ func (b *MessageBroadcaster) Broadcast(message *Message) {
 		select {
 		case ch <- message:
 		default:
-			l.WriteToLog("Error: slow subscriber, message channel is full. dropping message.", logging.LogTypeLog)
+			l.WriteLog("Slow subscriber, message channel is full. Dropping message.", logging.LogLevelWarning)
 		}
 	}
 }

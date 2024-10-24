@@ -127,7 +127,7 @@ func sleepForSeparationTime(separationTime byte) {
 		microseconds := 100 * (int(separationTime) - 0xF0)
 		time.Sleep(time.Duration(microseconds) * time.Microsecond)
 	} else {
-		l.WriteToLog("Invalid separation time received, setting separation time to 10 milliseconds", logging.LogTypeLog)
+		l.WriteLog("Invalid separation time received, setting separation time to 10 milliseconds", logging.LogLevelWarning)
 		time.Sleep(10 * time.Millisecond)
 	}
 }

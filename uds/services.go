@@ -46,9 +46,10 @@ var serviceIDNames = map[byte]string{
 	ServiceRequestTransferExit:            "Request Transfer Exit",
 	ServiceTesterPresent:                  "Tester Present",
 	ServiceControlDTCSetting:              "Control DTC Setting",
-	ServiceReadIdKTM16To20:                "Read ECU ID",
-	ServiceReadErrorsKTM16To20:            "Read Errors",
-	ServiceClearErrorsKTM16To20:           "Clear Errors",
+	// KTM16To20
+	ServiceReadIdKTM16To20:      "Read ECU ID",
+	ServiceReadErrorsKTM16To20:  "Read Errors",
+	ServiceClearErrorsKTM16To20: "Clear Errors",
 }
 
 func (m *Message) ServiceLabel() string {
