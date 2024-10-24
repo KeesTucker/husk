@@ -314,13 +314,17 @@ func (g *GUI) writeMessage(message logging.Message) {
 		return
 	}
 
-	// Break up message request response chains
 	if message.MessageType == logging.MessageTypeUDSWrite {
-		// Create a horizontal line
-		line := canvas.NewLine(color.White)
-		line.StrokeWidth = 2
-		line.Resize(fyne.NewSize(g.messageContainer.Size().Width, 2))
-		// Add the horizontal line to the container
+		// Create a horizontal line to break up message request response chains
+		line := canvas.NewLine(color.Gray{Y: 128})
+		line.StrokeWidth = 1
+		line.Resize(fyne.NewSize(g.messageContainer.Size().Width, 0))
+		g.messageContainer.Add(line)
+	} else {
+		// Create a faint horizontal line to break up messages
+		line := canvas.NewLine(color.Gray{Y: 16})
+		line.StrokeWidth = 1
+		line.Resize(fyne.NewSize(g.messageContainer.Size().Width, 0))
 		g.messageContainer.Add(line)
 	}
 
@@ -348,12 +352,6 @@ func (g *GUI) writeMessage(message logging.Message) {
 		// Add label to log container
 		g.messageContainer.Add(label)
 	}
-
-	// Create a faint horizontal line to break up messages
-	line := canvas.NewLine(color.Gray{Y: 128})
-	line.StrokeWidth = 1
-	line.Resize(fyne.NewSize(g.messageContainer.Size().Width, 1))
-	g.messageContainer.Add(line)
 
 	// Automatically scroll to bottom if autoScroll is enabled
 	if g.autoScrollMessages {
