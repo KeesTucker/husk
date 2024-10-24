@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/KeesTucker/husk/compare/husk-v1.7.0...husk-v1.8.0) (2024-10-23)
+
+
+### Features
+
+* added error read and error clear. ([a7b247f](https://github.com/KeesTucker/husk/commit/a7b247ff8e7c1603ba5baced04b58631008db156))
+* massive gui update to log across three different columns to make logs easier to read. still needs work but this works for now. also implemented various bugfixes and improvements ([a287a6c](https://github.com/KeesTucker/husk/commit/a287a6c30c12ca559c8eb838a671682b70f85f00))
+
 ## [1.7.0](https://github.com/KeesTucker/husk/compare/husk-v1.6.1...husk-v1.7.0) (2024-10-22)
 
 
