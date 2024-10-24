@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0](https://github.com/KeesTucker/husk/compare/husk-v1.8.0...husk-v1.9.0) (2024-10-24)
+
+
+### Features
+
+* made the gui much more sexy. ([426dc2a](https://github.com/KeesTucker/husk/commit/426dc2acde19aa60b18aca3ab227035ca35245a5))
+
+
+### Bug Fixes
+
+* a few UI fixups. ([0918810](https://github.com/KeesTucker/husk/commit/0918810c1fadeab070061d00750a4dc76fd715b7))
+
 ## [1.8.0](https://github.com/KeesTucker/husk/compare/husk-v1.7.0...husk-v1.8.0) (2024-10-23)
 
 
