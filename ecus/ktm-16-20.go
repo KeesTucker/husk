@@ -251,7 +251,7 @@ func (e *ProcessorKTM16To20) readMessage(ctx context.Context, serviceId *byte, s
 			}
 			return message, nil
 		case <-readCtx.Done():
-			l.WriteLog(fmt.Sprintf("Timeout waiting for request response, service ID: %02X, subfunction: %02X", serviceId, subfunction), logging.LogLevelError)
+			l.WriteLog(fmt.Sprintf("Timeout waiting for request response, service ID: %02X, subfunction: %02X", &serviceId, &subfunction), logging.LogLevelError)
 			return nil, readCtx.Err()
 		}
 	}

@@ -348,6 +348,13 @@ func (g *GUI) writeMessage(message logging.Message) {
 		// Add label to log container
 		g.messageContainer.Add(label)
 	}
+
+	// Create a faint horizontal line to break up messages
+	line := canvas.NewLine(color.Gray{Y: 128})
+	line.StrokeWidth = 1
+	line.Resize(fyne.NewSize(g.messageContainer.Size().Width, 1))
+	g.messageContainer.Add(line)
+
 	// Automatically scroll to bottom if autoScroll is enabled
 	if g.autoScrollMessages {
 		g.messageScrollContainer.ScrollToBottom()
