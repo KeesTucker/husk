@@ -20,7 +20,6 @@ type (
 		ClearErrors(ctx context.Context)
 	}
 )
-
 type ECUId struct {
 	hardwareId   string
 	softwareId   string
@@ -43,10 +42,8 @@ func ScanForECUs(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	l.WriteLog("Scanning for ecus", logging.LogLevelInfo)
 	availableECUs = []ECUProcessor{}
-
 	// Add more ecu types here
 	availableECUs = ScanKTM16To20(ctx, availableECUs)
-
 	availableECUIds = make([]string, len(availableECUs))
 	ecuIdToECU = make(map[string]ECUProcessor)
 	for i, ecu := range availableECUs {
@@ -60,7 +57,6 @@ func ScanForECUs(ctx context.Context) {
 	}
 	l.WriteLog("Found available ecus", logging.LogLevelSuccess)
 }
-
 func Connect(ctx context.Context, name string) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	driver, err := ecuIdToECU[name].Register()
@@ -81,7 +77,6 @@ func Connect(ctx context.Context, name string) {
 	connectEvent()
 	l.WriteLog("Connected to ECU successfully", logging.LogLevelSuccess)
 }
-
 func Disconnect() {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	if disconnectFunc != nil {
@@ -91,31 +86,25 @@ func Disconnect() {
 	services.Deregister(services.ServiceECU)
 	l.WriteLog("Disconnected from ECU successfully", logging.LogLevelSuccess)
 }
-
 func SubscribeToScanEvent(callback func(availableECUIds []string)) {
 	ecuScanCallbacks = append(ecuScanCallbacks, callback)
 }
-
 func SubscribeToConnectedEvent(callback func()) {
 	ecuConnectedCallbacks = append(ecuConnectedCallbacks, callback)
 }
-
 func SubscribeToDisconnectedEvent(callback func()) {
 	ecuDisconnectedCallbacks = append(ecuDisconnectedCallbacks, callback)
 }
-
 func scanEvent(availableECUIds []string) {
 	for _, callback := range ecuScanCallbacks {
 		callback(availableECUIds)
 	}
 }
-
 func connectEvent() {
 	for _, callback := range ecuConnectedCallbacks {
 		callback()
 	}
 }
-
 func disconnectEvent() {
 	for _, callback := range ecuDisconnectedCallbacks {
 		callback()
