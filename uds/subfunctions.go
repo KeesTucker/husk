@@ -80,14 +80,14 @@ var subfunctionNames = map[byte]map[byte]string{
 		SubfunctionDTCSettingOn:  "DTC Setting On",
 		SubfunctionDTCSettingOff: "DTC Setting Off",
 	},
-	// KTM16To20
-	ServiceReadIdKTM16To20: {
-		SubfunctionReadVINKTM16To20:           "Read VIN",
-		SubfunctionReadECUHardwareIdKTM16To20: "Read ECU Hardware Id",
-		SubfunctionReadECUSoftwareIdKTM16To20: "Read ECU Software Id",
-		SubfunctionReadCountryKTM16To20:       "Read Manufacturer Country Code",
-		SubfunctionReadManufacturerKTM16To20:  "Read Brand",
-		SubfunctionReadModelKTM16To20:         "Read Model",
+	// K01
+	ServiceReadIdK01: {
+		SubfunctionReadVINK01:           "Read VIN",
+		SubfunctionReadECUHardwareIdK01: "Read ECU Hardware Id",
+		SubfunctionReadECUSoftwareIdK01: "Read ECU Software Id",
+		SubfunctionReadCountryK01:       "Read Manufacturer Country Code",
+		SubfunctionReadManufacturerK01:  "Read Brand",
+		SubfunctionReadModelK01:         "Read Model",
 	},
 }
 

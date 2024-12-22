@@ -14,9 +14,9 @@ import (
 	"husk/uds"
 )
 
-// KTM16To20 Covers all KTM & Husqvarna 690 models from 2016 to 2020.
+// K01 Covers all KTM/Husqvarna/GasGas 690/701/700 Euro 4 Models
 // Support for additional models/years will come soon
-type ProcessorKTM16To20 struct {
+type K01 struct {
 	isRunning          int32 // Use int32 for atomic operations
 	identification     *ECUId
 	messageBroadcaster *uds.MessageBroadcaster
@@ -25,41 +25,45 @@ type ProcessorKTM16To20 struct {
 }
 
 const (
-	TesterPresentDelayKTM16To20 = 2 * time.Second
-	ReadTimeoutKTM16To20        = 5 * time.Second
+	TesterPresentDelayK01 = 2 * time.Second
+	ReadTimeoutK01        = 5 * time.Second
 )
 
-var CompatibleECUHardwareIdsKTM16To20 = []string{
+var CompatibleECUHardwareIdsK01 = []string{
 	"613.41.031.300",
 }
-var CompatibleECUSoftwareIdsKTM16To20 = []string{
+
+var CompatibleECUSoftwareIdsK01 = []string{
 	"KM2A0EU17H0631",
 }
-var CompatibleModelsKTM16To20 = []string{
+
+var CompatibleModelsK01 = []string{
 	"FE/FS 701",
 }
 
-func (e *ProcessorKTM16To20) GetTesterId() uint16 {
+func (e *K01) GetTesterId() uint16 {
 	return uds.TesterID
 }
-func (e *ProcessorKTM16To20) GetECUId() uint16 {
+
+func (e *K01) GetECUId() uint16 {
 	return uds.ECUID
 }
-func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
+
+func ScanK01(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	// Create a temporary instance of the processor
-	tempProcessor := &ProcessorKTM16To20{}
+	tempProcessor := &K01{}
 	// Register said instance so we can send ID requests
 	_, err := tempProcessor.Register()
 	if err != nil {
-		l.WriteLog(fmt.Sprintf("Failed to register temp KTM16To20 ECU Processor: %v", err), logging.LogLevelError)
+		l.WriteLog(fmt.Sprintf("Failed to register temp K01 ECU Processor: %v", err), logging.LogLevelError)
 		return nil
 	}
 	// We want to deregister our temporary ecu service so that the actual ecu service can be registered
 	defer services.Deregister(services.ServiceECU)
 	_, err = tempProcessor.Start(ctx)
 	if err != nil {
-		l.WriteLog(fmt.Sprintf("Failed to start temp KTM16To20 ECU Processor: %v", err), logging.LogLevelError)
+		l.WriteLog(fmt.Sprintf("Failed to start temp K01 ECU Processor: %v", err), logging.LogLevelError)
 		return nil
 	}
 	defer tempProcessor.Cleanup()
@@ -85,22 +89,24 @@ func ScanKTM16To20(ctx context.Context, ecus []ECUProcessor) []ECUProcessor {
 		return nil
 	}
 	// Create a fresh ecu processor instance and return that so it can be registered at the user's leisure
-	e := &ProcessorKTM16To20{}
+	e := &K01{}
 	e.identification = &identification
 	ecus = append(ecus, e)
 	return ecus
 }
 
 // String returns the id of the ECU
-func (e *ProcessorKTM16To20) String() string {
+func (e *K01) String() string {
 	return fmt.Sprintf("%s %s ECU: %s", e.identification.manufacturer, e.identification.model, e.identification.hardwareId)
 }
-func (e *ProcessorKTM16To20) Register() (ECUProcessor, error) {
+
+func (e *K01) Register() (ECUProcessor, error) {
 	services.Register(services.ServiceECU, e)
 	e.messageBroadcaster = uds.NewUDSMessageBroadcaster()
 	return e, nil
 }
-func (e *ProcessorKTM16To20) Start(ctx context.Context) (ECUProcessor, error) {
+
+func (e *K01) Start(ctx context.Context) (ECUProcessor, error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	// Create a cancellable context
 	ecuCtx, cancelFunc := context.WithCancel(ctx)
@@ -114,13 +120,15 @@ func (e *ProcessorKTM16To20) Start(ctx context.Context) (ECUProcessor, error) {
 	l.WriteLog("ECU processor running", logging.LogLevelSuccess)
 	return e, nil
 }
-func (e *ProcessorKTM16To20) subscribeReadMessages() (chan *uds.Message, error) {
+
+func (e *K01) subscribeReadMessages() (chan *uds.Message, error) {
 	if atomic.LoadInt32(&e.isRunning) == 0 {
 		return nil, fmt.Errorf("can't subscribe to messages, ecu is not connected")
 	}
 	return e.messageBroadcaster.Subscribe(), nil
 }
-func (e *ProcessorKTM16To20) unsubscribeReadMessages(ch chan *uds.Message) {
+
+func (e *K01) unsubscribeReadMessages(ch chan *uds.Message) {
 	if e.messageBroadcaster != nil {
 		e.messageBroadcaster.Unsubscribe(ch)
 	}
@@ -128,7 +136,7 @@ func (e *ProcessorKTM16To20) unsubscribeReadMessages(ch chan *uds.Message) {
 }
 
 // Cleanup stops the driver and releases all resources.
-func (e *ProcessorKTM16To20) Cleanup() {
+func (e *K01) Cleanup() {
 	if !atomic.CompareAndSwapInt32(&e.isRunning, 1, 0) {
 		// If isRunning was not 1, Cleanup has already been called
 		return
@@ -144,9 +152,10 @@ func (e *ProcessorKTM16To20) Cleanup() {
 	// Wait for all goroutines to finish
 	e.wg.Wait()
 }
-func (e *ProcessorKTM16To20) ReadErrors(ctx context.Context) (dtcs []string) {
+
+func (e *K01) ReadErrors(ctx context.Context) (dtcs []string) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
-	serviceId := uds.ServiceReadErrorsKTM16To20
+	serviceId := uds.ServiceReadErrorsK01
 	req := &uds.Message{
 		SenderID:  uds.TesterID,
 		ServiceID: serviceId,
@@ -178,9 +187,10 @@ func (e *ProcessorKTM16To20) ReadErrors(ctx context.Context) (dtcs []string) {
 	l.WriteLog("NO ERRORS FOUND", logging.LogLevelResult)
 	return
 }
-func (e *ProcessorKTM16To20) ClearErrors(ctx context.Context) {
+
+func (e *K01) ClearErrors(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
-	serviceId := uds.ServiceClearErrorsKTM16To20
+	serviceId := uds.ServiceClearErrorsK01
 	req := &uds.Message{
 		SenderID:  uds.TesterID,
 		ServiceID: serviceId,
@@ -198,15 +208,26 @@ func (e *ProcessorKTM16To20) ClearErrors(ctx context.Context) {
 	l.WriteLog("CLEARED ERRORS SUCCESSFULLY", logging.LogLevelSuccess)
 }
 
+// ReadECURom reads the entire ROM from the ECU using UDS multi-frame communication.
+func (e *K01) ReadECURom(ctx context.Context) ([]byte, error) {
+	l := services.Get(services.ServiceLogger).(*logging.Logger)
+
+	l.WriteLog("Starting ROM read process", logging.LogLevelInfo)
+
+	// TODO
+
+	return nil, nil
+}
+
 // readMessage will read the next UDS message received. It will block by the specified read timeout and will filter based on serviceId and subfunction
-func (e *ProcessorKTM16To20) readMessage(ctx context.Context, serviceId *byte, subfunction *byte) (*uds.Message, error) {
+func (e *K01) readMessage(ctx context.Context, serviceId *byte, subfunction *byte) (*uds.Message, error) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	if atomic.LoadInt32(&e.isRunning) == 0 {
 		return nil, fmt.Errorf("can't read message ecu is not connected")
 	}
 	messageChan, _ := e.subscribeReadMessages()
 	defer e.unsubscribeReadMessages(messageChan)
-	readCtx, cancel := context.WithTimeout(ctx, ReadTimeoutKTM16To20)
+	readCtx, cancel := context.WithTimeout(ctx, ReadTimeoutK01)
 	defer cancel()
 	for {
 		select {
@@ -236,7 +257,7 @@ func (e *ProcessorKTM16To20) readMessage(ctx context.Context, serviceId *byte, s
 }
 
 // processAndBroadcastUDSMessages reads complete UDS messages from readChan, processes them, and broadcasts to subscribers.
-func (e *ProcessorKTM16To20) processAndBroadcastUDSMessages(ctx context.Context) {
+func (e *K01) processAndBroadcastUDSMessages(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	defer e.wg.Done()
 	for {
@@ -262,7 +283,8 @@ func (e *ProcessorKTM16To20) processAndBroadcastUDSMessages(ctx context.Context)
 		}
 	}
 }
-func (e *ProcessorKTM16To20) testerPresentLoop(ctx context.Context) {
+
+func (e *K01) testerPresentLoop(ctx context.Context) {
 	l := services.Get(services.ServiceLogger).(*logging.Logger)
 	defer e.wg.Done()
 	for {
@@ -275,13 +297,14 @@ func (e *ProcessorKTM16To20) testerPresentLoop(ctx context.Context) {
 				l.WriteLog(fmt.Sprintf("Error couldn't send UDS tester present"), logging.LogLevelError)
 			}
 		}
-		time.Sleep(TesterPresentDelayKTM16To20)
+		time.Sleep(TesterPresentDelayK01)
 	}
 }
-func (e *ProcessorKTM16To20) scanEcu(ctx context.Context) (identification ECUId, err error) {
+
+func (e *K01) scanEcu(ctx context.Context) (identification ECUId, err error) {
 	// Check hardware ID
-	serviceId := uds.ServiceReadIdKTM16To20
-	subfunction := uds.SubfunctionReadECUHardwareIdKTM16To20
+	serviceId := uds.ServiceReadIdK01
+	subfunction := uds.SubfunctionReadECUHardwareIdK01
 	req := &uds.Message{
 		SenderID:    uds.TesterID,
 		ServiceID:   serviceId,
@@ -295,12 +318,12 @@ func (e *ProcessorKTM16To20) scanEcu(ctx context.Context) (identification ECUId,
 	if err != nil {
 		return
 	}
-	if !slices.Contains(CompatibleECUHardwareIdsKTM16To20, resp.ASCIIRepresentation()) {
+	if !slices.Contains(CompatibleECUHardwareIdsK01, resp.ASCIIRepresentation()) {
 		return identification, fmt.Errorf("incompatible hardware ID: %s", resp.ASCIIRepresentation())
 	}
 	identification.hardwareId = resp.ASCIIRepresentation()
 	// Check software ID
-	subfunction = uds.SubfunctionReadECUSoftwareIdKTM16To20
+	subfunction = uds.SubfunctionReadECUSoftwareIdK01
 	req.Subfunction = &subfunction
 	err = req.Send(ctx)
 	if err != nil {
@@ -310,12 +333,12 @@ func (e *ProcessorKTM16To20) scanEcu(ctx context.Context) (identification ECUId,
 	if err != nil {
 		return
 	}
-	if !slices.Contains(CompatibleECUSoftwareIdsKTM16To20, resp.ASCIIRepresentation()) {
+	if !slices.Contains(CompatibleECUSoftwareIdsK01, resp.ASCIIRepresentation()) {
 		return identification, fmt.Errorf("incompatible software ID: %s", resp.ASCIIRepresentation())
 	}
 	identification.softwareId = resp.ASCIIRepresentation()
 	// Check model
-	subfunction = uds.SubfunctionReadModelKTM16To20
+	subfunction = uds.SubfunctionReadModelK01
 	req.Subfunction = &subfunction
 	err = req.Send(ctx)
 	if err != nil {
@@ -325,12 +348,12 @@ func (e *ProcessorKTM16To20) scanEcu(ctx context.Context) (identification ECUId,
 	if err != nil {
 		return
 	}
-	if !slices.Contains(CompatibleModelsKTM16To20, resp.ASCIIRepresentation()) {
+	if !slices.Contains(CompatibleModelsK01, resp.ASCIIRepresentation()) {
 		return identification, fmt.Errorf("incompatible model: %s", resp.ASCIIRepresentation())
 	}
 	identification.model = resp.ASCIIRepresentation()
 	// Get VIN
-	subfunction = uds.SubfunctionReadVINKTM16To20
+	subfunction = uds.SubfunctionReadVINK01
 	req.Subfunction = &subfunction
 	err = req.Send(ctx)
 	if err != nil {
@@ -342,7 +365,7 @@ func (e *ProcessorKTM16To20) scanEcu(ctx context.Context) (identification ECUId,
 	}
 	identification.vin = resp.ASCIIRepresentation()
 	// Get manufacturer
-	subfunction = uds.SubfunctionReadManufacturerKTM16To20
+	subfunction = uds.SubfunctionReadManufacturerK01
 	req.Subfunction = &subfunction
 	err = req.Send(ctx)
 	if err != nil {
