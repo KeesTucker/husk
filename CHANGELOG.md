@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/KeesTucker/husk/compare/husk-v1.9.0...husk-v1.10.0) (2025-03-20)
+
+
+### Features
+
+* temp commit of keygen ([b47a146](https://github.com/KeesTucker/husk/commit/b47a146753af322195a6d7797ca48be1f27f9b1a))
+
 ## [1.9.0](https://github.com/KeesTucker/husk/compare/husk-v1.8.0...husk-v1.9.0) (2024-10-24)
 
 
