@@ -2,6 +2,8 @@
 
 husk is a free, open-source ECU calibration application designed for reverse-engineering and recalibrating modern motorbikes. This project is currently focused on the Husqvarna 701 (2018).
 
+![description](https://i.imgur.com/JEvRtku.gif) 
+
 ### WARNING!
 
 There are several important disclaimers when using husk:
